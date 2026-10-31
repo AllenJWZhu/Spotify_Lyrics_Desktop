@@ -23,9 +23,12 @@ pub fn run(source: &impl PlayerSource, args: &Args) -> anyhow::Result<()> {
     let mut monitor = Monitor::new(args.seek_threshold_ms);
     let mut last_width: usize = 0;
 
+    // Print the absolute path: a relative one depends on where the CLI was
+    // launched from, which is easy to lose track of.
+    let csv_path = std::path::absolute(&args.csv).unwrap_or_else(|_| args.csv.clone());
     println!(
         "Logging position reports to {} (Ctrl+C to stop)",
-        args.csv.display()
+        csv_path.display()
     );
 
     loop {
