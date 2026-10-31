@@ -181,6 +181,11 @@ impl Controller {
         self.send_worker(WorkerCommand::Control(action));
     }
 
+    /// Looks up the current track's lyrics again, bypassing the cache.
+    pub fn refresh_lyrics(&self) {
+        self.send_worker(WorkerCommand::Refresh);
+    }
+
     pub fn set_hotspot(&self, rect: Option<CssRect>) {
         *lock(&self.hotspot) = rect;
     }

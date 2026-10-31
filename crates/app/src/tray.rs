@@ -25,9 +25,19 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
         settings.locked,
         Some("Ctrl+Alt+L"),
     )?;
+    let refresh = MenuItem::with_id(app, "refresh", "Look up lyrics again", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&visible, &locked, &separator, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &visible,
+            &locked,
+            &PredefinedMenuItem::separator(app)?,
+            &refresh,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
 
     let mut builder = TrayIconBuilder::with_id("main")
         .tooltip("Lyrics Overlay")
@@ -37,6 +47,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
             match event.id().as_ref() {
                 "visible" => controller.toggle_visible(),
                 "locked" => controller.toggle_locked(),
+                "refresh" => controller.refresh_lyrics(),
                 "quit" => crate::quit(app),
                 _ => {}
             }

@@ -118,6 +118,19 @@ impl Follower {
         self.offset_ms = offset_ms;
     }
 
+    /// Forgets the current track's lyrics and asks for them again, e.g.
+    /// after a wrong match. Callers with a persistent cache should clear
+    /// its entry first.
+    pub fn refresh(&mut self) -> Vec<FollowEvent> {
+        let Some(track) = self.settler.settled().cloned() else {
+            return Vec::new();
+        };
+        self.cache.remove(&track);
+        self.state = LookupState::Loading { attempt: 1 };
+        self.line = None;
+        vec![FollowEvent::FetchRequested(track)]
+    }
+
     /// Playback position in lyric time (offset applied) at `now_ms`.
     pub fn lyric_position_ms(&self, snapshot: &PlayerSnapshot, now_ms: i64) -> u64 {
         (snapshot.estimated_position_ms(now_ms) as i64 + self.offset_ms).max(0) as u64
@@ -267,7 +280,7 @@ mod tests {
     fn found(lyrics: Lyrics) -> Option<FoundLyrics> {
         Some(FoundLyrics {
             lyrics,
-            source: "LRCLIB",
+            source: "LRCLIB".into(),
             matched_title: "Song".into(),
             matched_artist: "Artist".into(),
             matched_duration_ms: Some(200_000),
@@ -483,6 +496,21 @@ mod tests {
             f.on_fetched(a.clone(), Err("503".into()), 10_000)
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn refresh_refetches_the_current_track() {
+        let t = track("Song");
+        let mut f = settled_with(&t, None);
+        assert_eq!(f.state(), &LookupState::Ready(None));
+        assert_eq!(f.refresh(), vec![FollowEvent::FetchRequested(t.clone())]);
+        assert_eq!(f.state(), &LookupState::Loading { attempt: 1 });
+        assert_eq!(
+            f.on_fetched(t.clone(), Ok(synced()), 2_000),
+            vec![FollowEvent::LyricsReady(synced())]
+        );
+        // Nothing to refresh without a track.
+        assert!(Follower::new(1_000, 0).refresh().is_empty());
     }
 
     #[test]

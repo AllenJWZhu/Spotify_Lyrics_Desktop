@@ -1,5 +1,6 @@
 //! Lyrics model, parsing and providers.
 
+pub mod cache;
 mod lrc;
 pub mod lrclib;
 pub mod query;
@@ -46,7 +47,7 @@ impl Lyrics {
 pub struct FoundLyrics {
     pub lyrics: Lyrics,
     /// Provider name, e.g. "LRCLIB".
-    pub source: &'static str,
+    pub source: String,
     pub matched_title: String,
     pub matched_artist: String,
     /// Length of the matched entry in milliseconds, if the provider said.

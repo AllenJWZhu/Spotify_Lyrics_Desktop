@@ -197,7 +197,7 @@ mod tests {
     fn found(lyrics: Lyrics) -> Option<FoundLyrics> {
         Some(FoundLyrics {
             lyrics,
-            source: "LRCLIB",
+            source: "LRCLIB".into(),
             matched_title: "Song".into(),
             matched_artist: "Artist".into(),
             matched_duration_ms: Some(200_000),

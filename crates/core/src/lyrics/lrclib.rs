@@ -72,7 +72,7 @@ impl Record {
     fn into_found(self, lyrics: Lyrics) -> FoundLyrics {
         FoundLyrics {
             lyrics,
-            source: "LRCLIB",
+            source: "LRCLIB".into(),
             matched_duration_ms: self.duration_ms(),
             matched_title: self.track_name.unwrap_or_default(),
             matched_artist: self.artist_name.unwrap_or_default(),

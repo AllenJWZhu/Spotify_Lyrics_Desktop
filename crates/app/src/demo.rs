@@ -123,7 +123,7 @@ impl LyricsProvider for DemoProvider {
         }
         Ok(Some(FoundLyrics {
             lyrics: Lyrics::Synced(SyncedLyrics::parse(DEMO_LRC)),
-            source: "demo",
+            source: "demo".into(),
             matched_title: track.title.clone(),
             matched_artist: track.artist.clone(),
             matched_duration_ms: Some(LOOP_MS),

@@ -159,7 +159,12 @@ fn main() {
 
             let (tx, rx) = mpsc::channel();
             controller.attach_worker(tx);
-            worker::spawn(app.handle().clone(), demo, settings.offset_ms, rx)?;
+            let cache = app
+                .path()
+                .app_cache_dir()
+                .ok()
+                .map(|d| d.join("lyrics.sqlite3"));
+            worker::spawn(app.handle().clone(), demo, cache, settings.offset_ms, rx)?;
             spawn_housekeeping(app.handle().clone())?;
             Ok(())
         })
