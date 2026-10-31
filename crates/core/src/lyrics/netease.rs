@@ -22,7 +22,8 @@ pub const DEFAULT_BASE_URL: &str = "https://music.163.com";
 
 /// A search result must be this close to the track's length.
 const DURATION_TOLERANCE_MS: u64 = 3_000;
-const SEARCH_LIMIT: u32 = 10;
+/// Covers and re-uploads can crowd out the original, so look past the top few.
+const SEARCH_LIMIT: u32 = 30;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Song {
@@ -171,7 +172,12 @@ impl<A: Api> LyricsProvider for NetEase<A> {
     fn fetch(&self, track: &TrackInfo) -> Result<Option<FoundLyrics>, LyricsError> {
         let title = clean_title(track.title.trim());
         let artist = primary_artist(track.artist.trim());
-        let songs = self.api.search(&format!("{title} {artist}"))?;
+        let mut songs = self.api.search(&format!("{title} {artist}"))?;
+        if best_match(&songs, track).is_none() {
+            // NetEase may list the artist in another script, which can
+            // throw off a title + artist search.
+            songs = self.api.search(&title)?;
+        }
         let Some(song) = best_match(&songs, track) else {
             return Ok(None);
         };
@@ -503,5 +509,19 @@ mod tests {
             *provider.api.asked.lock().unwrap(),
             ["Bohemian Rhapsody Queen", "lyric 7"]
         );
+
+        // No match: one more search, by title alone.
+        let provider = NetEase::with_api(FakeApi {
+            songs: vec![],
+            lyric: LyricResponse::default(),
+            asked: Mutex::default(),
+        });
+        assert!(
+            provider
+                .fetch(&track("Song", "Artist", 1_000))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(*provider.api.asked.lock().unwrap(), ["Song Artist", "Song"]);
     }
 }

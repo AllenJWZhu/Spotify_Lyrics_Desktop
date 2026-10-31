@@ -6,7 +6,8 @@
 //!
 //! Only metadata and match results are printed, never lyrics text.
 
-use lyrics_core::lyrics::netease::NetEase;
+use lyrics_core::lyrics::lrclib::{DEFAULT_USER_AGENT, HttpTransport};
+use lyrics_core::lyrics::netease::{Api, DEFAULT_BASE_URL, NetEase};
 use lyrics_core::lyrics::{Lyrics, LyricsProvider};
 use lyrics_core::player::TrackInfo;
 
@@ -65,12 +66,29 @@ fn report_coverage_for_sample_tracks() {
                     f.matched_duration_ms
                 )
             }
-            Ok(None) => "not found".into(),
+            Ok(None) => format!("not found; NetEase had {}", candidates(t)),
             Err(e) => format!("error: {e}"),
         };
         report(&format!("{} — {} -> {result}", t.title, t.artist));
     }
     assert!(found > 0, "nothing found at all: the API may have changed");
+}
+
+/// The first few search results, to see why nothing matched.
+fn candidates(t: &TrackInfo) -> String {
+    let api = HttpTransport::with_base_url(DEFAULT_USER_AGENT, DEFAULT_BASE_URL);
+    match api.search(&format!("{} {}", t.title, t.artist)) {
+        Ok(songs) => songs
+            .iter()
+            .take(6)
+            .map(|s| {
+                let artists: Vec<_> = s.ar.iter().map(|a| a.name.as_str()).collect();
+                format!("{:?} by {:?} {:?} ms", s.name, artists.join(", "), s.dt)
+            })
+            .collect::<Vec<_>>()
+            .join(" | "),
+        Err(e) => format!("search error: {e}"),
+    }
 }
 
 fn report(line: &str) {
