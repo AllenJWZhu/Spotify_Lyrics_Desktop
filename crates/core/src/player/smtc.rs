@@ -22,6 +22,18 @@ pub struct SmtcSource {
     manager: SessionManager,
 }
 
+/// Joins the calling thread to the multithreaded apartment, which WinRT
+/// calls expect. Call once at the start of a worker thread before
+/// [`SmtcSource::new`]. Harmless if the thread is already initialized; a
+/// thread already in a single-threaded apartment (e.g. a UI thread) keeps
+/// it, and WinRT still works there.
+pub fn init_worker_thread() {
+    use windows::Win32::System::WinRT::{RO_INIT_MULTITHREADED, RoInitialize};
+    // SAFETY: no preconditions beyond being called on the current thread;
+    // RPC_E_CHANGED_MODE (thread already STA) is deliberately ignored.
+    let _ = unsafe { RoInitialize(RO_INIT_MULTITHREADED) };
+}
+
 impl SmtcSource {
     pub fn new() -> Result<Self, PlayerError> {
         let manager = SessionManager::RequestAsync()?.join()?;

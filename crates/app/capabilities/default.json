@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the overlay page may do: receive events, call the app's own commands, and start a window drag.",
+  "windows": ["overlay"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

@@ -1,0 +1,20 @@
+[package]
+name = "lyrics-overlay"
+description = "Floating desktop lyrics for the Spotify desktop app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+lyrics-core.workspace = true
+serde.workspace = true
+# Serve the bundled ui/ folder; there is no dev server.
+tauri = { version = "2", features = ["custom-protocol"] }
+
+[dev-dependencies]
+serde_json.workspace = true

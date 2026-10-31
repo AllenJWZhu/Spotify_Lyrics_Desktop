@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lyrics Overlay</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="overlay.js"></script>
+  </head>
+  <body>
+    <!-- The whole stage is a drag handle; text ignores the pointer so the
+         stage is always the event target. -->
+    <main id="stage" data-tauri-drag-region>
+      <div id="primary" class="line primary">
+        <span class="layer outline"></span>
+        <span class="layer base"></span>
+        <span class="layer sung"></span>
+      </div>
+      <div id="secondary" class="line secondary">
+        <span class="layer outline"></span>
+        <span class="layer base"></span>
+      </div>
+      <button id="close" type="button" title="Close" aria-label="Close">✕</button>
+    </main>
+  </body>
+</html>
