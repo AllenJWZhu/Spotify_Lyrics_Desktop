@@ -1,6 +1,6 @@
 [package]
 name = "lyrics-cli"
-description = "M0 prototype: print Spotify's now-playing state and measure position drift"
+description = "Follow Spotify on Windows and print synced lyrics line by line"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,5 +10,6 @@ repository.workspace = true
 [dependencies]
 lyrics-core.workspace = true
 anyhow.workspace = true
+unicode-width.workspace = true
 clap.workspace = true
 csv.workspace = true

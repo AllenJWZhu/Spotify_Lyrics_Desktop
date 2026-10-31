@@ -14,5 +14,11 @@ lyrics-core = { path = "crates/core" }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 csv = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 thiserror = "2"
+unicode-width = "0.2"
+# platform-verifier: trust the OS certificate store (works behind antivirus
+# TLS inspection). win-system-proxy: honor the proxy set in Windows settings.
+ureq = { version = "3", features = ["json", "platform-verifier", "win-system-proxy"] }
 windows = { version = "0.62", features = ["Foundation", "Foundation_Collections", "Media_Control"] }

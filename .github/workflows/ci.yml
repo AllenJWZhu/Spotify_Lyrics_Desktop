@@ -41,3 +41,16 @@ jobs:
         with:
           name: lyrics-cli-windows
           path: target/release/lyrics-cli.exe
+
+  lrclib-live:
+    # Calls the real LRCLIB API on Windows (OS certificate store, system
+    # proxy). Informational: an outage there must not block merges.
+    name: LRCLIB live (informational)
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Live lookups
+        run: cargo test -p lyrics-core --test lrclib_live --locked -- --ignored --nocapture --test-threads=1

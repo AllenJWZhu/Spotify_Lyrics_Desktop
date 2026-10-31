@@ -1,5 +1,5 @@
-//! The poll loop. Generic over [`PlayerSource`] so it compiles and can be
-//! exercised on any platform; only `main` picks the Windows source.
+//! `lyrics-cli drift`: the M0 tool. Logs every position report from Spotify
+//! to CSV so we can measure how well local interpolation tracks playback.
 
 // On non-Windows targets `main` never calls into this module.
 #![cfg_attr(not(windows), allow(dead_code))]
@@ -12,36 +12,33 @@ use std::time::Duration;
 use anyhow::Context;
 use lyrics_core::player::{PlayerSnapshot, PlayerSource, now_unix_ms};
 
-use crate::Args;
-use crate::display::status_line;
+use crate::DriftArgs;
+use crate::display::{Screen, status_line};
 use crate::monitor::{Event, Monitor};
 
-pub fn run(source: &impl PlayerSource, args: &Args) -> anyhow::Result<()> {
+pub fn run(source: &impl PlayerSource, args: &DriftArgs) -> anyhow::Result<()> {
     let file =
         File::create(&args.csv).with_context(|| format!("cannot create {}", args.csv.display()))?;
     let mut log = DriftLog::new(file)?;
     let mut monitor = Monitor::new(args.seek_threshold_ms);
-    let mut last_width: usize = 0;
+    let mut screen = Screen::new(io::stdout());
 
     // Print the absolute path: a relative one depends on where the CLI was
     // launched from, which is easy to lose track of.
     let csv_path = std::path::absolute(&args.csv).unwrap_or_else(|_| args.csv.clone());
-    println!(
+    screen.line(&format!(
         "Logging position reports to {} (Ctrl+C to stop)",
         csv_path.display()
-    );
+    ))?;
 
     loop {
         let now = now_unix_ms();
-        let snapshot = match source.snapshot() {
-            Ok(s) => s,
-            Err(e) => {
-                // Sessions can vanish between calls while Spotify starts or
-                // quits; report and keep polling.
-                eprintln!("\nSMTC error: {e}");
-                None
-            }
-        };
+        let snapshot = source.snapshot().unwrap_or_else(|e| {
+            // Sessions can vanish between calls while Spotify starts or
+            // quits; report and keep polling.
+            let _ = screen.line(&format!("SMTC error: {e}"));
+            None
+        });
 
         if let Some(event) = monitor.observe(snapshot.as_ref()) {
             log.record(now, event, snapshot.as_ref())?;
@@ -50,22 +47,11 @@ pub fn run(source: &impl PlayerSource, args: &Args) -> anyhow::Result<()> {
                 Event::Start | Event::SessionFound | Event::TrackChange
             ) {
                 // Keep the previous track's final status line on screen.
-                println!();
-                last_width = 0;
+                screen.keep_status()?;
             }
         }
 
-        let line = status_line(snapshot.as_ref(), now);
-        let width = line.chars().count();
-        // Pad with spaces to wipe leftovers from a longer previous line.
-        print!(
-            "\r{line}{:pad$}",
-            "",
-            pad = last_width.saturating_sub(width)
-        );
-        io::stdout().flush()?;
-        last_width = width;
-
+        screen.status(&status_line(snapshot.as_ref(), now))?;
         thread::sleep(Duration::from_millis(args.interval_ms));
     }
 }
