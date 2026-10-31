@@ -11,9 +11,11 @@ use tauri::{AppHandle, Emitter, Manager};
 use lyrics_core::follow::{FetchError, FollowEvent, Follower};
 use lyrics_core::lyrics::cache::LyricsCache;
 use lyrics_core::lyrics::{FoundLyrics, LyricsProvider};
-use lyrics_core::player::{PlayerAction, PlayerSource, TrackInfo, now_unix_ms};
+use lyrics_core::player::{PlaybackStatus, PlayerAction, PlayerSource, TrackInfo, now_unix_ms};
 
+use crate::controller::Controller;
 use crate::demo::{DemoProvider, DemoSource};
+use crate::presence::PlayerSeen;
 use crate::view::{OverlayState, PLAYBACK_EVENT, PlaybackThrottle, PlaybackView, STATE_EVENT};
 
 const POLL_MS: u64 = 100;
@@ -125,6 +127,11 @@ fn run(
         // A failed read (session vanishing while Spotify starts or quits)
         // looks the same as "not running" to the follower.
         let snapshot = source.snapshot().unwrap_or(None);
+        app.state::<Controller>().observe_player(match &snapshot {
+            None => PlayerSeen::Absent,
+            Some(s) if s.status == PlaybackStatus::Playing => PlayerSeen::Playing,
+            Some(_) => PlayerSeen::Idle,
+        });
 
         events.extend(follower.tick(snapshot.as_ref(), now));
         while let Ok((track, result)) = rx.try_recv() {
