@@ -20,6 +20,8 @@ Prefer not to install? **`LyricsOverlay-<version>-portable.zip`** contains a sin
 
 Each release lists SHA-256 checksums in `SHA256SUMS.txt`. To check a download in PowerShell: `Get-FileHash .\LyricsOverlay-0.1.0-setup.exe`.
 
+**Updates** come to you: the overlay checks for a new version when it starts and every few hours, and asks before installing it (one click, then it restarts by itself). **Check for updates** in the tray checks right away. Updates are signed, so the overlay only installs ones built by this project. (0.1.0 predates this; install 0.1.1 or later by hand once.) The portable version is offered updates too; accepting one installs the regular version.
+
 To uninstall, use **Settings → Apps → Installed apps → Lyrics Overlay**. It also removes the start-with-Windows entry; tick **Delete the application data** to remove settings and cached lyrics too. For the portable version, turn off **Start with Windows** in the tray before deleting the exe.
 
 ## How it works
@@ -49,7 +51,7 @@ The lyrics appear when Spotify starts playing, stay up while it's paused, and go
 | --- | --- |
 | **Hover** | toolbar: previous / play-pause / next, text size A− A+, colour, lyric timing − 0.0s + (click the value to reset), lock, quit |
 | **Lock** | clicks pass through to whatever is underneath. Hover the lyrics and an unlock button appears at the top |
-| **Tray icon** | show/hide, lock/unlock, look up lyrics again, start with Windows, open log folder, quit |
+| **Tray icon** | show/hide, lock/unlock, look up lyrics again, start with Windows, check for updates, open log folder, quit |
 | `Ctrl+Alt+L` | lock / unlock |
 | `Ctrl+Alt+D` | show / hide. While Spotify isn't playing, shows the window for a few seconds so you can move it |
 
@@ -142,8 +144,10 @@ cargo test -p lyrics-core --test lrclib_live -- --ignored --nocapture
 ### Making a release
 
 1. Bump `version` in the root `Cargo.toml` and add a section for it to `CHANGELOG.md`.
-2. Tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
-3. The **Release** workflow builds the installer, the portable zip and `SHA256SUMS.txt` on Windows and creates a **draft** release with the changelog section as its notes. Check it, then publish.
+2. Tag and push, e.g. `git tag -a v0.1.1 -m "Lyrics Overlay 0.1.1" && git push origin v0.1.1`.
+3. The **Release** workflow builds the installer, the portable zip, `SHA256SUMS.txt` and the updater's `latest.json` on Windows and creates a **draft** release with the changelog section as its notes. Check it, then publish: installed copies only see published releases, so publishing is what ships the update.
+
+The installer is signed for the in-app updater with the key in the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`; its public half is `plugins.updater.pubkey` in `crates/app/tauri.conf.json`. The workflow refuses to release if the signature doesn't verify against that key. Don't lose the private key: installed copies only accept updates signed with it.
 
 To build the installer locally (Windows, needs Node.js): `cd crates/app && npx @tauri-apps/cli@2.12.4 build`. It lands in `target/release/bundle/nsis/`.
 

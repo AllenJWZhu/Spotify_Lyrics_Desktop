@@ -1,6 +1,13 @@
 # Changelog
 
-## [0.1.0] - Unreleased
+## [0.1.1] - Unreleased
+
+**Updates**
+- The overlay checks for a new version shortly after it starts and every few hours, and offers to install it: one click downloads it, installs it and restarts the overlay. **Check for updates** in the tray checks right away.
+- Updates are signed, and the overlay only installs ones signed with this project's key.
+- 0.1.0 can't update itself: install 0.1.1 by hand once, and later versions arrive in the app.
+
+## [0.1.0] - 2026-10-31
 
 First release: floating desktop lyrics for the Spotify desktop app on Windows.
 

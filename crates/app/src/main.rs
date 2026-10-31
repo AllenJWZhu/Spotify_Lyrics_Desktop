@@ -14,6 +14,7 @@ mod presence;
 mod settings;
 mod shortcuts;
 mod tray;
+mod updates;
 mod view;
 mod worker;
 
@@ -130,7 +131,10 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec![AT_LOGIN_ARG]),
         ))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(worker::Shared::default())
+        .manage(updates::Updates::default())
         .invoke_handler(tauri::generate_handler![
             get_state,
             set_locked,
@@ -192,6 +196,7 @@ fn main() {
                 .map(|d| d.join("lyrics.sqlite3"));
             worker::spawn(app.handle().clone(), demo, cache, settings.offset_ms, rx)?;
             spawn_housekeeping(app.handle().clone())?;
+            updates::spawn_background_checks(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
