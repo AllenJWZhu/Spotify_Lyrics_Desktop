@@ -1,6 +1,7 @@
 //! Background thread: polls the player, drives the [`Follower`], fetches
 //! lyrics, and pushes [`OverlayState`] / [`PlaybackView`] to the page.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -60,17 +61,19 @@ impl Shared {
 }
 
 /// `cache`: where to keep fetched lyrics; `None` (or a cache that fails to
-/// open) means always fetch. Not used in demo mode.
+/// open) means always fetch. `backup`: whether to ask NetEase when LRCLIB
+/// has nothing synced. Neither is used in demo mode.
 pub fn spawn(
     app: AppHandle,
     demo: bool,
     cache: Option<std::path::PathBuf>,
+    backup: Arc<AtomicBool>,
     offset_ms: i64,
     commands: mpsc::Receiver<WorkerCommand>,
 ) -> std::io::Result<()> {
     thread::Builder::new()
         .name("lyrics-worker".into())
-        .spawn(move || run(app, demo, cache, offset_ms, commands))?;
+        .spawn(move || run(app, demo, cache, backup, offset_ms, commands))?;
     Ok(())
 }
 
@@ -80,6 +83,7 @@ fn run(
     app: AppHandle,
     demo: bool,
     cache_path: Option<std::path::PathBuf>,
+    backup: Arc<AtomicBool>,
     offset_ms: i64,
     commands: mpsc::Receiver<WorkerCommand>,
 ) {
@@ -90,7 +94,7 @@ fn run(
     } = if demo {
         demo_parts()
     } else {
-        real_parts(&app, cache_path.as_deref())
+        real_parts(&app, cache_path.as_deref(), backup)
     };
 
     let mut follower = Follower::new(SETTLE_MS, offset_ms);
@@ -222,30 +226,36 @@ fn demo_parts() -> Parts {
     }
 }
 
-/// LRCLIB, behind the on-disk cache when it opens.
+/// LRCLIB backed up by NetEase, behind the on-disk cache when it opens.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn lyrics_provider(
     cache_path: Option<&std::path::Path>,
+    backup: Arc<AtomicBool>,
 ) -> (Arc<dyn LyricsProvider>, Option<Arc<LyricsCache>>) {
     use lyrics_core::lyrics::cache::CachedProvider;
-    use lyrics_core::lyrics::lrclib::Lrclib;
+    use lyrics_core::lyrics::fallback::Fallback;
 
+    let sources = Fallback::lrclib_then_netease(backup);
     match cache_path.map(LyricsCache::open) {
         Some(Ok(cache)) => {
             let cache = Arc::new(cache);
-            let provider = CachedProvider::new(Lrclib::new(), Arc::clone(&cache));
+            let provider = CachedProvider::new(sources, Arc::clone(&cache));
             (Arc::new(provider), Some(cache))
         }
         Some(Err(e)) => {
             log::warn!("{e}; lyrics won't be cached");
-            (Arc::new(Lrclib::new()), None)
+            (Arc::new(sources), None)
         }
-        None => (Arc::new(Lrclib::new()), None),
+        None => (Arc::new(sources), None),
     }
 }
 
 #[cfg(windows)]
-fn real_parts(app: &AppHandle, cache_path: Option<&std::path::Path>) -> Parts {
+fn real_parts(
+    app: &AppHandle,
+    cache_path: Option<&std::path::Path>,
+    backup: Arc<AtomicBool>,
+) -> Parts {
     use lyrics_core::player::smtc::{SmtcSource, init_worker_thread};
 
     init_worker_thread();
@@ -263,7 +273,7 @@ fn real_parts(app: &AppHandle, cache_path: Option<&std::path::Path>) -> Parts {
             }
         }
     };
-    let (provider, cache) = lyrics_provider(cache_path);
+    let (provider, cache) = lyrics_provider(cache_path, backup);
     Parts {
         source: Box::new(source),
         provider,
@@ -272,7 +282,11 @@ fn real_parts(app: &AppHandle, cache_path: Option<&std::path::Path>) -> Parts {
 }
 
 #[cfg(not(windows))]
-fn real_parts(_app: &AppHandle, _cache_path: Option<&std::path::Path>) -> Parts {
+fn real_parts(
+    _app: &AppHandle,
+    _cache_path: Option<&std::path::Path>,
+    _backup: Arc<AtomicBool>,
+) -> Parts {
     // `main` always picks demo mode off Windows.
     demo_parts()
 }

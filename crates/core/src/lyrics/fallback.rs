@@ -32,6 +32,15 @@ impl Fallback {
         }
     }
 
+    /// LRCLIB backed up by NetEase.
+    pub fn lrclib_then_netease(enabled: Arc<AtomicBool>) -> Self {
+        Self::new(
+            Box::new(super::lrclib::Lrclib::new()),
+            Box::new(super::netease::NetEase::new()),
+            enabled,
+        )
+    }
+
     fn ask_backup(&self, track: &TrackInfo) -> Option<FoundLyrics> {
         match self.backup.fetch(track) {
             Ok(found) => found,

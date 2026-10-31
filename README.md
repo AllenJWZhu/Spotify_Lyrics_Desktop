@@ -36,6 +36,7 @@ To uninstall, use **Settings → Apps → Installed apps → Lyrics Overlay**. I
 - **Track changes.** Spotify updates a track's duration 200–800 ms before its title and artist. The app waits until all three have stopped changing for 1 s before looking up lyrics, so it never searches for "old title + new duration".
 - **Overlay.** A [Tauri](https://tauri.app) window (WebView2 on Windows). The backend sends the lyrics once per track plus a position anchor on line changes, play/pause and seeks; the page animates the fill every frame from that anchor, so it stays smooth without a stream of updates.
 - **Lyrics** are fetched at runtime from [LRCLIB](https://lrclib.net), an open database of time-synced lyrics: exact match first (with and without the album, then with cleaned-up title and main artist), then a search filtered to ±2 s of the track length. Lyrics are never bundled with or stored in this repository.
+- **Backup: NetEase Cloud Music (网易云音乐).** When LRCLIB has no synced lyrics for a song, or can't be reached, the app searches NetEase and takes a result only if the artist matches, the title is the same and the length is within a few seconds (covers and live versions are skipped). NetEase is strong on Chinese, Japanese and Korean songs and often has a Chinese translation, shown under each line. It uses the endpoints NetEase's own web player calls, which are unofficial and may change; turn it off with **Backup lyrics from NetEase** in the tray.
 - **Cache.** Lyrics you've seen are kept in a local SQLite file, so replays show instantly and work offline. "No lyrics found" is re-checked after 3 days. If a song matched the wrong version, use **Look up lyrics again** in the tray menu.
 
 ## Roadmap
@@ -56,7 +57,7 @@ The lyrics appear when Spotify starts playing, stay up while it's paused, and go
 | --- | --- |
 | **Hover** | toolbar: previous / play-pause / next, text size A− A+, colour, lyric timing − 0.0s + (click the value to reset), lock, quit |
 | **Lock** | clicks pass through to whatever is underneath. Hover the lyrics and an unlock button appears at the top |
-| **Tray icon** | show/hide, lock/unlock, look up lyrics again, start with Windows, check for updates, open log folder, quit |
+| **Tray icon** | show/hide, lock/unlock, look up lyrics again, backup lyrics from NetEase, start with Windows, check for updates, open log folder, quit |
 | `Ctrl+Alt+L` | lock / unlock |
 | `Ctrl+Alt+D` | show / hide. While Spotify isn't playing, shows the window for a few seconds so you can move it |
 
@@ -161,4 +162,4 @@ To build the installer locally (Windows, needs Node.js): `cd crates/app && npx @
 
 ## License
 
-[MIT](LICENSE). The bundled [Instrument Sans](https://github.com/Instrument/instrument-sans) font is under the SIL Open Font License (`crates/app/ui/fonts/OFL.txt`). Lyrics are provided by [LRCLIB](https://lrclib.net) at runtime. This project is not affiliated with or endorsed by Spotify.
+[MIT](LICENSE). The bundled [Instrument Sans](https://github.com/Instrument/instrument-sans) font is under the SIL Open Font License (`crates/app/ui/fonts/OFL.txt`). Lyrics are provided at runtime by [LRCLIB](https://lrclib.net) and, as a backup, NetEase Cloud Music. This project is not affiliated with or endorsed by Spotify.

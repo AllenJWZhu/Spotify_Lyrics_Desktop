@@ -63,6 +63,8 @@ pub struct Settings {
     pub offset_ms: i64,
     /// Last position; `None` means bottom center.
     pub position: Option<WindowPosition>,
+    /// Ask NetEase when LRCLIB has nothing synced or can't be reached.
+    pub backup_lyrics: bool,
 }
 
 impl Default for Settings {
@@ -74,6 +76,7 @@ impl Default for Settings {
             theme: Theme::default(),
             offset_ms: 0,
             position: None,
+            backup_lyrics: true,
         }
     }
 }
@@ -182,6 +185,7 @@ mod tests {
             theme: Theme::Gold,
             offset_ms: -500,
             position: Some(WindowPosition { x: -1200, y: 840 }),
+            backup_lyrics: false,
         };
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
@@ -213,6 +217,8 @@ mod tests {
         assert_eq!(s.font_scale, MAX_FONT_SCALE);
         assert_eq!(s.offset_ms, MAX_OFFSET_MS);
         assert!(s.visible);
+        // Files from before the NetEase backup existed get it turned on.
+        assert!(s.backup_lyrics);
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 

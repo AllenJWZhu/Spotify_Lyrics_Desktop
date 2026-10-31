@@ -42,6 +42,10 @@ pub struct WatchArgs {
     /// How long track metadata must stay unchanged before lyrics are fetched.
     #[arg(long, default_value_t = 1_000)]
     pub settle_ms: i64,
+
+    /// Don't fall back to NetEase when LRCLIB has nothing synced.
+    #[arg(long)]
+    pub no_netease: bool,
 }
 
 #[derive(Args, Debug)]
@@ -62,15 +66,20 @@ pub struct DriftArgs {
 #[cfg(windows)]
 fn main() -> anyhow::Result<()> {
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
-    use lyrics_core::lyrics::lrclib::Lrclib;
+    use lyrics_core::lyrics::fallback::Fallback;
     use lyrics_core::player::smtc::SmtcSource;
 
     let cli = Cli::parse();
     let source = SmtcSource::new()?;
     match cli.command {
         Some(Command::Drift(args)) => drift::run(&source, &args),
-        None => watch::run(&source, Arc::new(Lrclib::new()), &cli.watch),
+        None => {
+            let backup = Arc::new(AtomicBool::new(!cli.watch.no_netease));
+            let provider = Arc::new(Fallback::lrclib_then_netease(backup));
+            watch::run(&source, provider, &cli.watch)
+        }
     }
 }
 

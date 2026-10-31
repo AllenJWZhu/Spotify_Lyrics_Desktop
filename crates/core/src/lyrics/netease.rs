@@ -202,9 +202,9 @@ fn normalize(s: &str) -> String {
         .collect()
 }
 
-/// `a` and `b` name the same thing: equal, or one contains the other and
+/// `a` and `b` name the same artist: equal, or one contains the other and
 /// is a substantial part of it (NetEase writes "TWS (투어스)" for "TWS").
-fn same_name(a: &str, b: &str) -> bool {
+fn same_artist(a: &str, b: &str) -> bool {
     let (a, b) = (normalize(a), normalize(b));
     if a.is_empty() || b.is_empty() {
         return false;
@@ -212,35 +212,40 @@ fn same_name(a: &str, b: &str) -> bool {
     a == b || ((a.contains(&b) || b.contains(&a)) && a.chars().count().min(b.chars().count()) >= 2)
 }
 
-/// The search result that is this track, if any: same title (after
-/// cleanup), length within 3 s, and preferably the same artist. A title
-/// match with no artist match needs a length within 1 s, for artists
-/// NetEase lists under another script.
+/// Length difference allowed for the same title, and for the same title
+/// once release details are cleaned off ("Song (Remastered 2011)"), which
+/// may be another recording, so it has to be closer.
+const EXACT_TITLE_TOLERANCE_MS: u64 = DURATION_TOLERANCE_MS;
+const CLEANED_TITLE_TOLERANCE_MS: u64 = 1_500;
+
+/// The search result that is this track, if any: one of the artists must
+/// match (covers often have the same length), the title must be the same,
+/// and the length close. Exact titles beat ones that only match after
+/// cleanup, then the closer length wins.
 pub fn best_match<'a>(songs: &'a [Song], track: &TrackInfo) -> Option<&'a Song> {
-    let title = clean_title(&track.title);
+    let title = normalize(&track.title);
+    let clean = normalize(&clean_title(&track.title));
     let artist = primary_artist(&track.artist);
     songs
         .iter()
         .filter_map(|song| {
-            let diff = match (song.dt, track.duration_ms) {
-                (Some(dt), d) if d > 0 => dt.abs_diff(d),
-                // Unknown length: only trust a full title and artist match.
-                _ => u64::MAX,
-            };
-            if !same_name(&clean_title(&song.name), &title) {
+            if !song.ar.iter().any(|a| same_artist(&a.name, &artist)) {
                 return None;
             }
-            let artist_ok = song.ar.iter().any(|a| same_name(&a.name, &artist));
-            let ok = match (artist_ok, diff) {
-                (true, d) if d <= DURATION_TOLERANCE_MS => true,
-                (true, u64::MAX) => true,
-                (false, d) => d <= 1_000,
-                _ => false,
+            let exact = normalize(&song.name) == title;
+            if !exact && normalize(&clean_title(&song.name)) != clean {
+                return None;
+            }
+            let diff = match song.dt {
+                Some(dt) if track.duration_ms > 0 => dt.abs_diff(track.duration_ms),
+                _ => return None,
             };
-            // "Song" over "Song (Live)" when Spotify says "Song": other
-            // versions are timed differently.
-            let exact = normalize(&song.name) == normalize(&track.title);
-            ok.then_some((song, (!artist_ok, !exact, diff)))
+            let tolerance = if exact {
+                EXACT_TITLE_TOLERANCE_MS
+            } else {
+                CLEANED_TITLE_TOLERANCE_MS
+            };
+            (diff <= tolerance).then_some((song, (!exact, diff)))
         })
         .min_by_key(|(_, rank)| *rank)
         .map(|(song, _)| song)
@@ -359,35 +364,42 @@ mod tests {
     #[test]
     fn matches_title_artist_and_length() {
         let songs = [
-            song(1, "plot twist (Live)", &["TWS"], 152_400),
-            song(2, "plot twist", &["Someone Else"], 190_000),
-            song(3, "plot twist", &["TWS (투어스)"], 152_900),
+            song(1, "plot twist (Band LIVE)", &["TWS"], 152_100),
+            song(2, "plot twist", &["Someone Else"], 152_400),
+            song(3, "plot twist", &["TWS (투어스)"], 153_900),
         ];
         let t = track("plot twist", "TWS", 152_400);
-        // The live version matches too once "(Live)" is cleaned off, but
-        // the exact title wins over a closer length.
+        // The exact title wins over a closer length...
         assert_eq!(best_match(&songs, &t).map(|s| s.id), Some(3));
+        // ...but another version is fine if nothing else matches and the
+        // length is very close.
         assert_eq!(best_match(&songs[..1], &t).map(|s| s.id), Some(1));
     }
 
     #[test]
-    fn rejects_wrong_length_and_wrong_title() {
+    fn rejects_covers_other_versions_and_wrong_lengths() {
+        let t = track("Brought The Heat Back", "ENHYPEN", 176_424);
+        // A cover upload with the very same length.
+        assert!(
+            best_match(
+                &[song(1, "Brought The Heat Back", &["Some Singer"], 176_424)],
+                &t
+            )
+            .is_none()
+        );
+        let t = track("晴天", "周杰伦", 269_000);
+        assert!(best_match(&[song(1, "晴天 (女声版)", &["周杰伦"], 268_750)], &t).is_none());
+        assert!(best_match(&[song(1, "晴天", &["周杰伦"], 275_000)], &t).is_none());
+        assert!(best_match(&[song(1, "晴天", &["周杰伦"], 269_400)], &t).is_some());
         let t = track("ETA", "NewJeans", 151_373);
-        assert!(best_match(&[song(1, "ETA", &["NewJeans"], 160_000)], &t).is_none());
-        assert!(best_match(&[song(1, "Ditto", &["NewJeans"], 151_373)], &t).is_none());
-        // Artist under another name: only with a near-exact length.
-        assert!(best_match(&[song(1, "ETA", &["뉴진스"], 151_800)], &t).is_some());
-        assert!(best_match(&[song(1, "ETA", &["뉴진스"], 153_000)], &t).is_none());
-    }
-
-    #[test]
-    fn prefers_an_artist_match_over_a_closer_length() {
-        let songs = [
-            song(1, "Hello", &["Cover Band"], 295_500),
-            song(2, "Hello", &["Adele"], 297_000),
-        ];
-        let t = track("Hello", "Adele", 295_500);
-        assert_eq!(best_match(&songs, &t).map(|s| s.id), Some(2));
+        assert!(best_match(&[song(1, "ETA (Remix)", &["NewJeans"], 158_000)], &t).is_none());
+        assert!(
+            best_match(
+                &[song(1, "ETA", &["DanielleMarsh", "NewJeans"], 151_392)],
+                &t
+            )
+            .is_some()
+        );
     }
 
     fn response(lrc: &str, tlyric: Option<&str>) -> LyricResponse {
