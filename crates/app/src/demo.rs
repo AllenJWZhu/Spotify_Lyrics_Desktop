@@ -24,7 +24,7 @@ const DEMO_LRC: &str = "\
 [00:15.00]
 [00:19.00]A long line to check that text which does not fit shrinks instead of being cut off
 [00:25.00]Drag the window to move it
-[00:29.00]Hover for the close button
+[00:29.00]Hover for the controls
 [00:33.00]The demo loops from here
 ";
 

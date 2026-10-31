@@ -45,8 +45,8 @@ function nextText(lines, after) {
 
 const STATUS_TEXT = {
   loading: "Looking up lyrics…",
-  missing: "No lyrics found",
-  plain: "Only unsynced lyrics available",
+  missing: "No lyrics found for this song",
+  plain: "Only unsynced lyrics exist for this song",
   instrumental: "Instrumental",
 };
 
@@ -65,22 +65,22 @@ export function computeView(state, playback, nowMs) {
   if (!track) {
     return {
       key: "idle",
-      primary: { text: state?.message ?? "Waiting for Spotify…", fill: null, muted: true },
+      primary: { text: state?.message ?? "Play something in Spotify", fill: null, muted: true },
       secondary: null,
     };
   }
 
-  const header = `${track.title} — ${track.artist}`;
+  const id = `${track.title}\u0000${track.artist}`;
   if (state.lookup !== "synced") {
     const status =
       state.lookup === "error"
         ? state.retrying
-          ? "Lyrics lookup failed, retrying…"
-          : "Lyrics lookup failed"
+          ? "Couldn't reach LRCLIB, retrying…"
+          : "Couldn't reach LRCLIB. Use the tray menu to try again"
         : STATUS_TEXT[state.lookup] ?? "";
     return {
-      key: `info:${header}`,
-      primary: { text: header, fill: null, muted: false },
+      key: `info:${id}`,
+      primary: { text: track.title, fill: null, muted: false },
       secondary: status ? { text: status, muted: true } : null,
     };
   }
@@ -92,18 +92,18 @@ export function computeView(state, playback, nowMs) {
   // (seeks). Moving forward at the exact moment is done here.
   if (pos !== null && playback.playing) line = Math.max(line, lineAt(lines, pos));
 
+  // Before the first line: who's playing, title over artist.
   if (line < 0) {
-    const upcoming = nextText(lines, -1);
     return {
-      key: `intro:${header}`,
-      primary: { text: header, fill: null, muted: true },
-      secondary: upcoming ? { text: upcoming, muted: true } : null,
+      key: `intro:${id}`,
+      primary: { text: track.title, fill: null, muted: false },
+      secondary: track.artist ? { text: track.artist, muted: true } : null,
     };
   }
 
   const { first, last } = groupBounds(lines, line);
   const current = lines[first];
-  const key = `line:${header}:${first}`;
+  const key = `line:${id}:${first}`;
 
   if (!current.text) {
     const upcoming = nextText(lines, last);
