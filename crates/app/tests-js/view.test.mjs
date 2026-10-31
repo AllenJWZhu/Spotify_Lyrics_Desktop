@@ -2,7 +2,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { MAX_FILL_MS, computeView, extrapolate, groupBounds, lineAt } from "../ui/view.js";
+import {
+  MAX_FILL_MS,
+  computeView,
+  extrapolate,
+  formatOffset,
+  groupBounds,
+  lineAt,
+} from "../ui/view.js";
 
 const track = { title: "Song", artist: "Artist" };
 const lines = [
@@ -109,4 +116,10 @@ test("key changes with the displayed line", () => {
   const c = computeView(synced, playing(3100, 0, 2), 0).key;
   assert.equal(a, b);
   assert.notEqual(a, c);
+});
+
+test("offsets are formatted with a sign and one decimal", () => {
+  assert.equal(formatOffset(0), "0.0s");
+  assert.equal(formatOffset(500), "+0.5s");
+  assert.equal(formatOffset(-1500), "−1.5s");
 });

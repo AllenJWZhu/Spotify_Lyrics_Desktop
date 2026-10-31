@@ -1,24 +1,53 @@
 :root {
-  /* Unsung text: near-white. Sung text: cyan to blue. Both get a dark
-     outline so they stay readable over any wallpaper or window. */
+  /* Unsung text: near-white. Sung text: per theme. Both get a dark outline
+     so they stay readable over any wallpaper or window. */
   --unsung-top: #ffffff;
   --unsung-bottom: #dde6ef;
+  --muted-top: #d5dce6;
+  --muted-bottom: #aab5c4;
+  --outline: rgba(8, 12, 24, 0.72);
+  --shadow: rgba(0, 0, 0, 0.45);
+
   --sung-top: #b8f2ff;
   --sung-mid: #4cc7f5;
   --sung-bottom: #1d9bf0;
-  --outline: rgba(8, 12, 24, 0.72);
-  --shadow: rgba(0, 0, 0, 0.45);
-  --muted-top: #d5dce6;
-  --muted-bottom: #aab5c4;
 
-  --primary-size: 36px;
-  --secondary-size: 22px;
+  /* Set by the app from settings; the window is resized to match. */
+  --font-scale: 1;
+  --primary-size: calc(36px * var(--font-scale));
+  --secondary-size: calc(22px * var(--font-scale));
+  /* Must match TOOLBAR_HEIGHT in src/geometry.rs. */
+  --toolbar-height: 36px;
 
   font-family:
     "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", "Malgun Gothic",
     "Yu Gothic UI", "PingFang SC", "Apple SD Gothic Neo", "Noto Sans CJK SC",
     "Noto Sans CJK KR", system-ui, sans-serif;
   font-weight: 700;
+}
+
+:root[data-theme="pink"] {
+  --sung-top: #ffd6ee;
+  --sung-mid: #ff7cc4;
+  --sung-bottom: #e8399a;
+}
+
+:root[data-theme="green"] {
+  --sung-top: #d4ffe2;
+  --sung-mid: #5fe08e;
+  --sung-bottom: #1fae57;
+}
+
+:root[data-theme="gold"] {
+  --sung-top: #fff2c4;
+  --sung-mid: #ffcd4f;
+  --sung-bottom: #f29b0b;
+}
+
+:root[data-theme="red"] {
+  --sung-top: #ffd6d6;
+  --sung-mid: #ff6f6f;
+  --sung-bottom: #e0343a;
 }
 
 html,
@@ -35,21 +64,138 @@ body {
   position: relative;
   box-sizing: border-box;
   height: 100%;
-  padding: 10px 28px;
+  display: grid;
+  grid-template-rows: var(--toolbar-height) 1fr;
+  border-radius: 14px;
+  background: transparent;
+  transition: background-color 160ms ease;
+}
+
+/* Hovering an unlocked window reveals its extent and the toolbar. */
+body:not(.locked) #stage:hover {
+  background: rgba(10, 14, 26, 0.42);
+}
+
+/* ---- Toolbar ---------------------------------------------------------- */
+
+#toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+body:not(.locked) #stage:hover #toolbar {
+  opacity: 1;
+}
+
+body.locked #toolbar {
+  visibility: hidden;
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  color: #f1f5f9;
+  background: transparent;
+  font: 600 14px/1 "Segoe UI", system-ui, sans-serif;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+button svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.text-button {
+  font-variant-numeric: tabular-nums;
+}
+
+#offset {
+  min-width: 48px;
+  color: #cbd5e1;
+}
+
+.separator {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, var(--sung-top), var(--sung-bottom));
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.close:hover {
+  background: rgba(239, 68, 68, 0.85);
+}
+
+#play-pause .icon-pause,
+#play-pause.playing .icon-play {
+  display: none;
+}
+
+#play-pause.playing .icon-pause {
+  display: block;
+}
+
+/* ---- Locked mode ------------------------------------------------------ */
+
+/* Laid out (so its position can be reported) but invisible until the
+   pointer is over the locked window. */
+#unlock {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  background: rgba(10, 14, 26, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+body.locked #unlock {
+  pointer-events: auto;
+}
+
+body.locked.pointer-inside #unlock {
+  opacity: 1;
+}
+
+body:not(.locked) #unlock {
+  display: none;
+}
+
+/* ---- Lyrics ----------------------------------------------------------- */
+
+#lyrics {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  border-radius: 14px;
-  background: transparent;
-  transition: background-color 160ms ease;
-  cursor: default;
-}
-
-/* Hovering reveals the window's extent and the close button. */
-#stage:hover {
-  background: rgba(10, 14, 26, 0.38);
+  gap: calc(6px * var(--font-scale));
+  padding: 0 28px 10px;
+  min-width: 0;
 }
 
 .line {
@@ -125,30 +271,6 @@ body {
     opacity: 1;
     transform: none;
   }
-}
-
-#close {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 50%;
-  font: 600 13px/26px system-ui, sans-serif;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.14);
-  opacity: 0;
-  transition: opacity 160ms ease, background-color 160ms ease;
-  cursor: pointer;
-}
-
-#stage:hover #close {
-  opacity: 1;
-}
-
-#close:hover {
-  background: rgba(239, 68, 68, 0.85);
 }
 
 /* Author `display` rules would otherwise override the hidden attribute. */

@@ -8,19 +8,60 @@
     <script type="module" src="overlay.js"></script>
   </head>
   <body>
-    <!-- The whole stage is a drag handle; text ignores the pointer so the
-         stage is always the event target. -->
+    <!-- Anything carrying data-tauri-drag-region moves the window when
+         dragged; lyric text ignores the pointer so its container is hit. -->
     <main id="stage" data-tauri-drag-region>
-      <div id="primary" class="line primary">
-        <span class="layer outline"></span>
-        <span class="layer base"></span>
-        <span class="layer sung"></span>
-      </div>
-      <div id="secondary" class="line secondary">
-        <span class="layer outline"></span>
-        <span class="layer base"></span>
-      </div>
-      <button id="close" type="button" title="Close" aria-label="Close">✕</button>
+      <nav id="toolbar" aria-label="Controls" data-tauri-drag-region>
+        <button type="button" data-action="previous" title="Previous track">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6h2v12H7zM10 12l9-6v12z" /></svg>
+        </button>
+        <button type="button" data-action="playPause" id="play-pause" title="Play / pause">
+          <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+          <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>
+        </button>
+        <button type="button" data-action="next" title="Next track">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6h2v12h-2zM14 12 5 6v12z" /></svg>
+        </button>
+        <span class="separator" data-tauri-drag-region></span>
+        <button type="button" data-action="fontDown" class="text-button" title="Smaller text">A−</button>
+        <button type="button" data-action="fontUp" class="text-button" title="Larger text">A+</button>
+        <button type="button" data-action="theme" title="Change colour">
+          <span class="swatch" aria-hidden="true"></span>
+        </button>
+        <span class="separator" data-tauri-drag-region></span>
+        <button type="button" data-action="offsetDown" class="text-button" title="Show lyrics later (−0.5 s)">−</button>
+        <button type="button" data-action="offsetReset" id="offset" class="text-button" title="Lyrics timing; click to reset">0.0s</button>
+        <button type="button" data-action="offsetUp" class="text-button" title="Show lyrics earlier (+0.5 s)">+</button>
+        <span class="separator" data-tauri-drag-region></span>
+        <button type="button" data-action="lock" title="Lock: clicks pass through (Ctrl+Alt+L)">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 10V8a5 5 0 0 1 10 0v2h1v10H6V10zm2 0h6V8a3 3 0 0 0-6 0z" />
+          </svg>
+        </button>
+        <button type="button" data-action="close" class="close" title="Quit">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4z" /></svg>
+        </button>
+      </nav>
+
+      <section id="lyrics" data-tauri-drag-region>
+        <div id="primary" class="line primary">
+          <span class="layer outline"></span>
+          <span class="layer base"></span>
+          <span class="layer sung"></span>
+        </div>
+        <div id="secondary" class="line secondary">
+          <span class="layer outline"></span>
+          <span class="layer base"></span>
+        </div>
+      </section>
+
+      <!-- Shown while locked and the pointer is over the window. The app
+           lets clicks through everywhere except over this button. -->
+      <button type="button" id="unlock" data-action="unlock" title="Unlock (Ctrl+Alt+L)">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 10V8a5 5 0 0 1 9.6-2l-1.8.9A3 3 0 0 0 9 8v2h9v10H6V10z" />
+        </svg>
+      </button>
     </main>
   </body>
 </html>

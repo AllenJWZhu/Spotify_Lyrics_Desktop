@@ -133,3 +133,9 @@ export function computeView(state, playback, nowMs) {
       : null,
   };
 }
+
+/** Lyric timing offset for display: "+0.5s", "−1.0s", "0.0s". */
+export function formatOffset(ms) {
+  const sign = ms > 0 ? "+" : ms < 0 ? "−" : "";
+  return `${sign}${(Math.abs(ms) / 1000).toFixed(1)}s`;
+}

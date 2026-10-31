@@ -6,42 +6,112 @@
 // No console window in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod controller;
 mod demo;
+mod geometry;
+mod settings;
+mod shortcuts;
+mod tray;
 mod view;
 mod worker;
 
-use tauri::{LogicalSize, Manager, PhysicalPosition, WebviewWindow};
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
-/// Latest state and playback, so a (re)loaded page can render immediately.
-#[tauri::command]
-fn get_state(shared: tauri::State<'_, worker::Shared>) -> worker::Initial {
-    shared.current()
+use serde::Serialize;
+use tauri::{AppHandle, Manager, State, WindowEvent};
+
+use lyrics_core::player::PlayerAction;
+
+use controller::{Controller, WINDOW_LABEL};
+use geometry::CssRect;
+use settings::Settings;
+use view::{OverlayState, PlaybackView};
+
+/// Everything the page needs on (re)load, before events start arriving.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PageInit {
+    state: OverlayState,
+    playback: Option<PlaybackView>,
+    settings: Settings,
 }
 
 #[tauri::command]
-fn quit(app: tauri::AppHandle) {
+fn get_state(shared: State<'_, worker::Shared>, controller: State<'_, Controller>) -> PageInit {
+    let initial = shared.current();
+    PageInit {
+        state: initial.state,
+        playback: initial.playback,
+        settings: controller.settings(),
+    }
+}
+
+#[tauri::command]
+fn set_locked(controller: State<'_, Controller>, locked: bool) {
+    controller.set_locked(locked);
+}
+
+#[tauri::command]
+fn step_font(controller: State<'_, Controller>, steps: i32) {
+    controller.step_font(steps);
+}
+
+#[tauri::command]
+fn cycle_theme(controller: State<'_, Controller>) {
+    controller.cycle_theme();
+}
+
+#[tauri::command]
+fn step_offset(controller: State<'_, Controller>, steps: i64) {
+    controller.step_offset(steps);
+}
+
+#[tauri::command]
+fn reset_offset(controller: State<'_, Controller>) {
+    controller.reset_offset();
+}
+
+#[tauri::command]
+fn player_control(controller: State<'_, Controller>, action: PlayerAction) {
+    controller.control(action);
+}
+
+/// Where the page drew the unlock button (CSS px), or `None` when hidden.
+#[tauri::command]
+fn set_unlock_hotspot(controller: State<'_, Controller>, rect: Option<CssRect>) {
+    controller.set_hotspot(rect);
+}
+
+#[tauri::command]
+fn quit_app(app: AppHandle) {
+    quit(&app);
+}
+
+pub fn quit(app: &AppHandle) {
+    app.state::<Controller>().flush();
     app.exit(0);
 }
 
-/// Bottom center of the primary monitor's work area (above the taskbar).
-fn place_bottom_center(window: &WebviewWindow) -> tauri::Result<()> {
-    let Some(monitor) = window.primary_monitor()? else {
-        return Ok(());
-    };
-    let area = monitor.work_area();
-    // A window that hasn't been shown yet may report 0×0 (seen on GTK);
-    // fall back to the size configured in tauri.conf.json.
-    let mut size = window.outer_size()?;
-    if size.width == 0 || size.height == 0 {
-        if let Some(config) = window.config().app.windows.first() {
-            size =
-                LogicalSize::new(config.width, config.height).to_physical(monitor.scale_factor());
-        }
-    }
-    let margin = (40.0 * monitor.scale_factor()) as i32;
-    let x = area.position.x + (area.size.width as i32 - size.width as i32) / 2;
-    let y = area.position.y + area.size.height as i32 - size.height as i32 - margin;
-    window.set_position(PhysicalPosition::new(x, y))
+/// Cursor tracking for the locked window, and periodic saving of the
+/// window position.
+fn spawn_housekeeping(app: AppHandle) -> std::io::Result<()> {
+    thread::Builder::new()
+        .name("housekeeping".into())
+        .spawn(move || {
+            let mut last_flush = Instant::now();
+            loop {
+                let controller = app.state::<Controller>();
+                controller.pointer_tick();
+                if last_flush.elapsed() >= Duration::from_millis(500) {
+                    controller.flush();
+                    last_flush = Instant::now();
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+        })?;
+    Ok(())
 }
 
 fn main() {
@@ -49,14 +119,48 @@ fn main() {
 
     tauri::Builder::default()
         .manage(worker::Shared::default())
-        .invoke_handler(tauri::generate_handler![get_state, quit])
+        .invoke_handler(tauri::generate_handler![
+            get_state,
+            set_locked,
+            step_font,
+            cycle_theme,
+            step_offset,
+            reset_offset,
+            player_control,
+            set_unlock_hotspot,
+            quit_app,
+        ])
         .setup(move |app| {
+            let path = app.path().app_config_dir()?.join("settings.json");
+            let settings = Settings::load(&path);
+            app.manage(Controller::new(
+                app.handle().clone(),
+                path,
+                settings.clone(),
+            ));
+            let controller = app.state::<Controller>();
+
             let window = app
-                .get_webview_window("overlay")
+                .get_webview_window(WINDOW_LABEL)
                 .expect("tauri.conf.json defines the overlay window");
-            place_bottom_center(&window)?;
-            window.show()?;
-            worker::spawn(app.handle().clone(), demo)?;
+            let handle = app.handle().clone();
+            window.on_window_event(move |event| {
+                if let WindowEvent::Moved(pos) = event {
+                    handle.state::<Controller>().window_moved(*pos);
+                }
+            });
+            controller.restore_window(&window)?;
+
+            match tray::build(app, &settings) {
+                Ok(items) => controller.attach_tray(items),
+                Err(e) => eprintln!("tray icon unavailable: {e}"),
+            }
+            shortcuts::install(app.handle());
+
+            let (tx, rx) = mpsc::channel();
+            controller.attach_worker(tx);
+            worker::spawn(app.handle().clone(), demo, settings.offset_ms, rx)?;
+            spawn_housekeeping(app.handle().clone())?;
             Ok(())
         })
         .run(tauri::generate_context!())

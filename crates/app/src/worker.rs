@@ -10,13 +10,20 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use lyrics_core::follow::{FollowEvent, Follower};
 use lyrics_core::lyrics::{FoundLyrics, LyricsProvider};
-use lyrics_core::player::{PlayerSource, TrackInfo, now_unix_ms};
+use lyrics_core::player::{PlayerAction, PlayerSource, TrackInfo, now_unix_ms};
 
 use crate::demo::{DemoProvider, DemoSource};
 use crate::view::{OverlayState, PLAYBACK_EVENT, PlaybackThrottle, PlaybackView, STATE_EVENT};
 
 const POLL_MS: u64 = 100;
 const SETTLE_MS: i64 = 1_000;
+
+/// Requests from the rest of the app to the worker thread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkerCommand {
+    SetOffset(i64),
+    Control(PlayerAction),
+}
 
 /// Everything the page needs on (re)load, before events start arriving.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -40,23 +47,43 @@ impl Shared {
     }
 }
 
-pub fn spawn(app: AppHandle, demo: bool) -> std::io::Result<()> {
+pub fn spawn(
+    app: AppHandle,
+    demo: bool,
+    offset_ms: i64,
+    commands: mpsc::Receiver<WorkerCommand>,
+) -> std::io::Result<()> {
     thread::Builder::new()
         .name("lyrics-worker".into())
-        .spawn(move || run(app, demo))?;
+        .spawn(move || run(app, demo, offset_ms, commands))?;
     Ok(())
 }
 
 type FetchResult = (TrackInfo, Result<Option<FoundLyrics>, String>);
 
-fn run(app: AppHandle, demo: bool) {
+fn run(app: AppHandle, demo: bool, offset_ms: i64, commands: mpsc::Receiver<WorkerCommand>) {
     let (source, provider) = if demo { demo_parts() } else { real_parts(&app) };
 
-    let mut follower = Follower::new(SETTLE_MS, 0);
+    let mut follower = Follower::new(SETTLE_MS, offset_ms);
     let mut throttle = PlaybackThrottle::default();
     let (tx, rx) = mpsc::channel::<FetchResult>();
 
     loop {
+        while let Ok(command) = commands.try_recv() {
+            match command {
+                WorkerCommand::SetOffset(ms) => {
+                    follower.set_offset_ms(ms);
+                    // The position the page extrapolates from just jumped.
+                    throttle.reset();
+                }
+                WorkerCommand::Control(action) => {
+                    if let Err(e) = source.control(action) {
+                        eprintln!("player control failed: {e}");
+                    }
+                }
+            }
+        }
+
         let now = now_unix_ms();
         // A failed read (session vanishing while Spotify starts or quits)
         // looks the same as "not running" to the follower.

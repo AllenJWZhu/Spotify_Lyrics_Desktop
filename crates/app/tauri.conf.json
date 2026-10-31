@@ -13,7 +13,7 @@
         "label": "overlay",
         "title": "Lyrics Overlay",
         "width": 960,
-        "height": 150,
+        "height": 176,
         "transparent": true,
         "decorations": false,
         "shadow": false,
