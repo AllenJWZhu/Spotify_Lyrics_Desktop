@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/AllenJWZhu/Spotify_Lyrics_Desktop"
+
+[workspace.dependencies]
+lyrics-core = { path = "crates/core" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+csv = "1"
+thiserror = "2"
+windows = { version = "0.62", features = ["Foundation", "Foundation_Collections", "Media_Control"] }
