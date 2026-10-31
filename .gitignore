@@ -1,0 +1,4 @@
+/target
+
+# Output of `lyrics-cli` drift logging
+drift*.csv
