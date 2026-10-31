@@ -96,15 +96,55 @@ pub trait Transport: Send + Sync {
     fn search(&self, track_name: &str, artist_name: &str) -> Result<Vec<Record>, LyricsError>;
 }
 
+/// Waits before each retry of a transient failure. LRCLIB answers 503 when
+/// it sheds load, which a CI run hit on the very first request.
+const DEFAULT_RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(3)];
+
+/// Failures worth retrying: server overload or a flaky connection. Client
+/// errors (400, 404) and malformed responses are not.
+fn is_transient(e: &ureq::Error) -> bool {
+    matches!(
+        e,
+        ureq::Error::StatusCode(429 | 500 | 502 | 503 | 504)
+            | ureq::Error::Timeout(_)
+            | ureq::Error::Io(_)
+            | ureq::Error::ConnectionFailed
+    )
+}
+
 /// Real HTTP transport.
 pub struct HttpTransport {
     agent: ureq::Agent,
     base_url: String,
+    retry_delays: Vec<Duration>,
 }
 
 impl HttpTransport {
     pub fn new(user_agent: &str) -> Self {
         Self::with_base_url(user_agent, DEFAULT_BASE_URL)
+    }
+
+    /// Overrides the waits between retries; an empty list disables retries.
+    pub fn with_retry_delays(mut self, delays: Vec<Duration>) -> Self {
+        self.retry_delays = delays;
+        self
+    }
+
+    /// Runs `attempt`, retrying transient failures after each delay in turn.
+    fn with_retries<T>(
+        &self,
+        mut attempt: impl FnMut() -> Result<T, ureq::Error>,
+    ) -> Result<T, ureq::Error> {
+        let mut delays = self.retry_delays.iter();
+        loop {
+            match attempt() {
+                Err(e) if is_transient(&e) => match delays.next() {
+                    Some(delay) => std::thread::sleep(*delay),
+                    None => return Err(e),
+                },
+                result => return result,
+            }
+        }
     }
 
     pub fn with_base_url(user_agent: &str, base_url: &str) -> Self {
@@ -122,38 +162,45 @@ impl HttpTransport {
         Self {
             agent,
             base_url: base_url.trim_end_matches('/').to_string(),
+            retry_delays: DEFAULT_RETRY_DELAYS.to_vec(),
         }
     }
 }
 
 impl Transport for HttpTransport {
     fn get(&self, query: &GetQuery) -> Result<Option<Record>, LyricsError> {
-        let mut request = self
-            .agent
-            .get(format!("{}/api/get", self.base_url))
-            .query("track_name", &query.track_name)
-            .query("artist_name", &query.artist_name);
-        if let Some(album) = &query.album_name {
-            request = request.query("album_name", album);
-        }
-        if let Some(duration) = query.duration_s {
-            request = request.query("duration", format!("{duration:.3}"));
-        }
-        match request.call() {
-            Ok(mut response) => Ok(Some(response.body_mut().read_json()?)),
+        let result = self.with_retries(|| {
+            let mut request = self
+                .agent
+                .get(format!("{}/api/get", self.base_url))
+                .query("track_name", &query.track_name)
+                .query("artist_name", &query.artist_name);
+            if let Some(album) = &query.album_name {
+                request = request.query("album_name", album);
+            }
+            if let Some(duration) = query.duration_s {
+                request = request.query("duration", format!("{duration:.3}"));
+            }
+            request.call()?.body_mut().read_json::<Record>()
+        });
+        match result {
+            Ok(record) => Ok(Some(record)),
             Err(ureq::Error::StatusCode(404)) => Ok(None),
             Err(e) => Err(e.into()),
         }
     }
 
     fn search(&self, track_name: &str, artist_name: &str) -> Result<Vec<Record>, LyricsError> {
-        let mut response = self
-            .agent
-            .get(format!("{}/api/search", self.base_url))
-            .query("track_name", track_name)
-            .query("artist_name", artist_name)
-            .call()?;
-        Ok(response.body_mut().read_json()?)
+        let records = self.with_retries(|| {
+            self.agent
+                .get(format!("{}/api/search", self.base_url))
+                .query("track_name", track_name)
+                .query("artist_name", artist_name)
+                .call()?
+                .body_mut()
+                .read_json::<Vec<Record>>()
+        })?;
+        Ok(records)
     }
 }
 

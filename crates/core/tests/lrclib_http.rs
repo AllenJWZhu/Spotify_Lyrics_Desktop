@@ -3,8 +3,10 @@
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use lyrics_core::lyrics::lrclib::{GetQuery, HttpTransport, Lrclib, Transport};
 use lyrics_core::lyrics::{Lyrics, LyricsProvider};
@@ -163,10 +165,51 @@ fn get_maps_404_to_none_and_omits_unset_params() {
 }
 
 #[test]
-fn server_errors_are_errors() {
-    let (base, _) = serve(Box::new(|_| (503, "{}".to_string())));
-    let transport = HttpTransport::with_base_url("t", &base);
+fn persistent_overload_fails_after_retries() {
+    let (base, seen) = serve(Box::new(|_| (503, "{}".to_string())));
+    let transport = HttpTransport::with_base_url("t", &base).with_retry_delays(no_wait());
     assert!(transport.search("x", "y").is_err());
+    // One attempt plus two retries.
+    assert_eq!(seen.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn transient_overload_is_retried() {
+    let calls = AtomicUsize::new(0);
+    let (base, seen) = serve(Box::new(move |_| {
+        if calls.fetch_add(1, Ordering::SeqCst) < 2 {
+            (503, "{}".to_string())
+        } else {
+            (200, RECORD.to_string())
+        }
+    }));
+    let transport = HttpTransport::with_base_url("t", &base).with_retry_delays(no_wait());
+    let query = GetQuery {
+        track_name: "x".into(),
+        artist_name: "y".into(),
+        album_name: None,
+        duration_s: None,
+    };
+    assert!(transport.get(&query).unwrap().is_some());
+    assert_eq!(seen.lock().unwrap().len(), 3);
+}
+
+#[test]
+fn not_found_is_not_retried() {
+    let (base, seen) = serve(Box::new(|_| (404, NOT_FOUND.to_string())));
+    let transport = HttpTransport::with_base_url("t", &base).with_retry_delays(no_wait());
+    let query = GetQuery {
+        track_name: "x".into(),
+        artist_name: "y".into(),
+        album_name: None,
+        duration_s: None,
+    };
+    assert!(transport.get(&query).unwrap().is_none());
+    assert_eq!(seen.lock().unwrap().len(), 1);
+}
+
+fn no_wait() -> Vec<Duration> {
+    vec![Duration::ZERO; 2]
 }
 
 #[test]
