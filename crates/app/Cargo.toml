@@ -18,4 +18,6 @@ serde_json.workspace = true
 # Serve the bundled ui/ folder; there is no dev server.
 tauri = { version = "2", features = ["custom-protocol", "tray-icon"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"

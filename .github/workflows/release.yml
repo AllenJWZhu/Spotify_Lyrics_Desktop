@@ -5,6 +5,11 @@ name: Release
 # look. Pull requests that change the app build the same files as a dry run
 # without releasing anything, so the installer can be tried before merging
 # (download from the run page).
+#
+# In-app updates: the installer is signed with the updater key (repository
+# secrets TAURI_SIGNING_PRIVATE_KEY / _PASSWORD) and latest.json describes
+# it. Installed copies read latest.json from the *latest published* release,
+# so nothing reaches users until the draft is published.
 
 on:
   push:
@@ -51,7 +56,21 @@ jobs:
 
       - name: Build installer
         working-directory: crates/app
-        run: npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build --ci
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            # Also writes the installer's .sig for the updater.
+            npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build --ci \
+              --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY isn't set; a release without it can't update installed copies"
+            exit 1
+          else
+            echo "::notice::No updater key (e.g. a PR from a fork); building without update signatures"
+            npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build --ci
+          fi
 
       - name: Collect release files
         env:
@@ -62,6 +81,22 @@ jobs:
           cp target/release/lyrics-overlay.exe portable/LyricsOverlay.exe
           (cd portable && 7z a -bso0 "../dist/LyricsOverlay-$VERSION-portable.zip" LyricsOverlay.exe)
           (cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+          # The updater's manifest, if the installer was signed.
+          sig=$(ls target/release/bundle/nsis/*-setup.exe.sig 2>/dev/null | head -1)
+          if [ -n "$sig" ]; then
+            # Will installed copies (which trust the key in tauri.conf.json) accept it?
+            node .github/scripts/verify-update-signature.mjs \
+              "dist/LyricsOverlay-$VERSION-setup.exe" "$sig" crates/app/tauri.conf.json
+            awk -v v="$VERSION" '
+              /^## / { inside = index($0, "[" v "]") > 0; next }
+              inside
+            ' CHANGELOG.md > notes.md
+            .github/scripts/updater-manifest.sh "$VERSION" windows-x86_64 \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/LyricsOverlay-$VERSION-setup.exe" \
+              "$sig" notes.md > dist/latest.json
+            jq '.platforms' dist/latest.json
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -80,6 +115,7 @@ jobs:
             inside
           ' CHANGELOG.md > notes.md
           [ -s notes.md ] || { echo "::error::CHANGELOG.md has no section for $VERSION"; exit 1; }
+          [ -f dist/latest.json ] || { echo "::error::No latest.json; installed copies wouldn't see this release"; exit 1; }
           gh release create "$GITHUB_REF_NAME" dist/* \
             --draft \
             --title "Lyrics Overlay $VERSION" \

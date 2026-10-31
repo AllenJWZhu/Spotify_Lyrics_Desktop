@@ -60,6 +60,18 @@
         ],
         "displayLanguageSelector": false
       }
+    },
+    "createUpdaterArtifacts": false
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFCQUJBODM3QjQ2MDg3MjUKUldRbGgyQzBONmlycXpUY3ljblNIVzhvdkF0RkF1Ri9ScnVIWmFTbTVBWkJmdEhHb0FoNGVNN0sK",
+      "endpoints": [
+        "https://github.com/AllenJWZhu/Spotify_Lyrics_Desktop/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

@@ -7,6 +7,7 @@ use tauri::{App, Manager};
 
 use crate::controller::{Controller, TrayItems};
 use crate::settings::Settings;
+use crate::updates::{self, Updates};
 
 const AUTOSTART_LABEL: &str = if cfg!(windows) {
     "Start with Windows"
@@ -41,6 +42,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
     )?;
     let refresh = MenuItem::with_id(app, "refresh", "Look up lyrics again", true, None::<&str>)?;
     let logs = MenuItem::with_id(app, "logs", "Open log folder", true, None::<&str>)?;
+    let update = MenuItem::with_id(app, "update", updates::CHECK_LABEL, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -51,6 +53,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
             &refresh,
             &PredefinedMenuItem::separator(app)?,
             &autostart,
+            &update,
             &logs,
             &PredefinedMenuItem::separator(app)?,
             &quit,
@@ -68,6 +71,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
                 "refresh" => controller.refresh_lyrics(),
                 "logs" => controller.open_log_folder(),
                 "autostart" => controller.toggle_autostart(),
+                "update" => updates::on_tray_click(app),
                 "quit" => crate::quit(app),
                 _ => {}
             }
@@ -76,6 +80,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
         builder = builder.icon(icon.clone());
     }
     builder.build(app)?;
+    app.state::<Updates>().attach_tray_item(update);
 
     Ok(TrayItems {
         visible,
