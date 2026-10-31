@@ -105,11 +105,26 @@ pub enum PlayerError {
     Other(String),
 }
 
+/// A transport command to send to the player.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlayerAction {
+    PlayPause,
+    Next,
+    Previous,
+}
+
 /// Something that can tell us what a music player is doing.
 pub trait PlayerSource {
     /// Current state of the target player, or `None` if it isn't running
     /// or has no media session.
     fn snapshot(&self) -> Result<Option<PlayerSnapshot>, PlayerError>;
+
+    /// Asks the player to play/pause or skip. Sources that can't control
+    /// their player return an error.
+    fn control(&self, action: PlayerAction) -> Result<(), PlayerError> {
+        Err(PlayerError::Other(format!("{action:?} is not supported")))
+    }
 }
 
 #[cfg(test)]

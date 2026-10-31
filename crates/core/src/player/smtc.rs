@@ -14,8 +14,8 @@ use windows::Media::Control::{
 };
 
 use super::{
-    PlaybackStatus, PlayerError, PlayerSnapshot, PlayerSource, TrackInfo, is_spotify_app_id,
-    now_unix_ms, winrt_datetime_to_unix_ms, winrt_timespan_to_ms,
+    PlaybackStatus, PlayerAction, PlayerError, PlayerSnapshot, PlayerSource, TrackInfo,
+    is_spotify_app_id, now_unix_ms, winrt_datetime_to_unix_ms, winrt_timespan_to_ms,
 };
 
 pub struct SmtcSource {
@@ -57,12 +57,28 @@ impl SmtcSource {
 }
 
 impl PlayerSource for SmtcSource {
+    fn control(&self, action: PlayerAction) -> Result<(), PlayerError> {
+        let Some(session) = self.find_spotify()? else {
+            return Err(PlayerError::Other("Spotify is not running".into()));
+        };
+        let accepted = match action {
+            PlayerAction::PlayPause => session.TryTogglePlayPauseAsync()?.join()?,
+            PlayerAction::Next => session.TrySkipNextAsync()?.join()?,
+            PlayerAction::Previous => session.TrySkipPreviousAsync()?.join()?,
+        };
+        if accepted {
+            Ok(())
+        } else {
+            Err(PlayerError::Other(format!("Spotify ignored {action:?}")))
+        }
+    }
+
     fn snapshot(&self) -> Result<Option<PlayerSnapshot>, PlayerError> {
         let Some(session) = self.find_spotify()? else {
             return Ok(None);
         };
 
-        // TODO(M1): cache metadata and refresh it on `MediaPropertiesChanged`
+        // TODO: cache metadata and refresh it on `MediaPropertiesChanged`
         // instead of fetching it on every poll.
         let props = session.TryGetMediaPropertiesAsync()?.join()?;
         let timeline = session.GetTimelineProperties()?;

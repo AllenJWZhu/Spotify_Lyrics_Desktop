@@ -2,7 +2,7 @@
 
 Floating, always-on-top desktop lyrics for the Spotify desktop app on Windows, in the style of NetEase Cloud Music's desktop lyrics.
 
-> **Status: M2 prototype.** A transparent, always-on-top window shows the current line with a karaoke fill and the next line (or translation) below it. Locking/click-through, tray icon and settings come next.
+> **Status: M3.** A transparent, always-on-top window shows the current line with a karaoke fill and the next line (or translation) below it. It can be locked so clicks pass through, and is controlled from a hover toolbar, the tray icon or global shortcuts.
 
 ## How it works
 
@@ -17,7 +17,7 @@ Floating, always-on-top desktop lyrics for the Spotify desktop app on Windows, i
 - [x] **M0** Read Spotify via SMTC, interpolate position, log drift to CSV
 - [x] **M1** Fetch and parse synced lyrics, print the current line in the terminal
 - [x] **M2** Transparent always-on-top overlay window (Tauri)
-- [ ] **M3** Lock / click-through mode, drag to move, tray icon, settings
+- [x] **M3** Lock / click-through mode, drag to move, tray icon, settings
 - [ ] **M4** Translation line, per-track offset, extra lyrics providers, persistent cache, word-level timing
 - [ ] **M5** Packaged releases
 
@@ -29,7 +29,17 @@ Requires Windows 10 or 11 and the Spotify desktop app. Either download `lyrics-o
 cargo run --release -p lyrics-overlay
 ```
 
-The window appears above the taskbar. Drag it anywhere to move it; hover to see its edges and the close button.
+The window appears above the taskbar. Drag it anywhere to move it.
+
+| | |
+| --- | --- |
+| **Hover** | toolbar: previous / play-pause / next, text size A− A+, colour, lyric timing − 0.0s + (click the value to reset), lock, quit |
+| **Lock** | clicks pass through to whatever is underneath. Hover the lyrics and an unlock button appears at the top |
+| **Tray icon** | show/hide, lock/unlock, quit |
+| `Ctrl+Alt+L` | lock / unlock |
+| `Ctrl+Alt+D` | show / hide |
+
+Position, size, colour, timing offset and lock state are remembered in `%APPDATA%\io.github.allenjwzhu.lyrics-overlay\settings.json`.
 
 To try it without Spotify (or on macOS/Linux, where this is the only mode), run the built-in demo track:
 
@@ -82,7 +92,7 @@ crates/core
   lyrics/    LRC parser, title/artist cleanup, LRCLIB client
   follow.rs  Follower: current track, lyrics lookup with retries, current line
 crates/cli   command-line front end
-crates/app   overlay window (Tauri); ui/ is plain HTML/CSS/JS, no build step
+crates/app   overlay window (Tauri): settings, controller (lock, tray, shortcuts), worker; ui/ is plain HTML/CSS/JS, no build step
 ```
 
 ## Development
