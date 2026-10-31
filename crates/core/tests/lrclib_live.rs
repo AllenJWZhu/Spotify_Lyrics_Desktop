@@ -41,13 +41,15 @@ fn finds_synced_lyrics_through_title_cleanup() {
         .fetch(&t)
         .expect("request failed")
         .expect("no lyrics found");
-    println!(
-        "matched {:?} by {:?} ({:?} ms): {}",
+    report(&format!(
+        "{} — {} -> {} (matched {:?} by {:?}, {:?} ms)",
+        t.title,
+        t.artist,
+        describe(&found.lyrics),
         found.matched_title,
         found.matched_artist,
         found.matched_duration_ms,
-        describe(&found.lyrics)
-    );
+    ));
     assert!(found.lyrics.is_synced());
 }
 
@@ -75,6 +77,16 @@ fn report_coverage_for_sample_tracks() {
             Ok(None) => "not found".into(),
             Err(e) => format!("error: {e}"),
         };
-        println!("{:<24} {:<10} -> {result}", t.title, t.artist);
+        report(&format!("{} — {} -> {result}", t.title, t.artist));
+    }
+}
+
+/// Prints a result line. Under GitHub Actions it is also emitted as a
+/// notice annotation, which shows on the PR and is readable through the
+/// checks API (job logs themselves are only downloadable from a browser).
+fn report(line: &str) {
+    println!("{line}");
+    if std::env::var_os("GITHUB_ACTIONS").is_some() {
+        println!("::notice title=LRCLIB live::{line}");
     }
 }
