@@ -30,12 +30,30 @@ pub enum Effect {
     Fetch(TrackInfo),
 }
 
+/// Waits before refetching after a failed lookup. A track plays for
+/// minutes, so it's worth outlasting an LRCLIB overload (503) that the
+/// transport's own short retries didn't.
+const RETRY_DELAYS_MS: [i64; 4] = [5_000, 15_000, 30_000, 60_000];
+
+/// Backward position corrections smaller than this are treated as noise,
+/// not seeks. Spotify's report on pause lands ~200 ms behind playback, which
+/// would otherwise flash the previous line.
+const BACKTRACK_TOLERANCE_MS: i64 = 500;
+
 #[derive(Debug, Clone, PartialEq)]
 enum LyricsState {
     Idle,
-    Loading,
+    /// `attempt` counts lookups started for the current track, from 1.
+    Loading {
+        attempt: usize,
+    },
     Ready(Option<FoundLyrics>),
-    Failed,
+    /// The last lookup failed. `retry_at` is when to try again, or `None`
+    /// once retries are used up.
+    Failed {
+        attempt: usize,
+        retry_at: Option<i64>,
+    },
 }
 
 pub struct Watcher {
@@ -79,7 +97,7 @@ impl Watcher {
                     }
                     None => {
                         effects.push(Effect::Fetch(track));
-                        self.state = LyricsState::Loading;
+                        self.state = LyricsState::Loading { attempt: 1 };
                     }
                 }
             }
@@ -90,6 +108,22 @@ impl Watcher {
                 self.last_line = None;
             }
             None => {}
+        }
+
+        if let LyricsState::Failed {
+            attempt,
+            retry_at: Some(retry_at),
+        } = self.state
+        {
+            if now_ms >= retry_at {
+                // Failed is only ever set for the settled track.
+                if let Some(track) = self.settler.settled() {
+                    effects.push(Effect::Fetch(track.clone()));
+                    self.state = LyricsState::Loading {
+                        attempt: attempt + 1,
+                    };
+                }
+            }
         }
 
         if let Some(snapshot) = snapshot {
@@ -113,8 +147,15 @@ impl Watcher {
             return Vec::new();
         }
 
-        let position = snapshot.estimated_position_ms(now_ms) as i64 + self.offset_ms;
-        let index = synced.line_index_at(position.max(0) as u64);
+        let position = (snapshot.estimated_position_ms(now_ms) as i64 + self.offset_ms).max(0);
+        let mut index = synced.line_index_at(position as u64);
+        if let Some(current) = self.last_line.and_then(|i| synced.lines().get(i)) {
+            let small_step_back = index < self.last_line
+                && position + BACKTRACK_TOLERANCE_MS >= current.start_ms as i64;
+            if small_step_back {
+                index = self.last_line;
+            }
+        }
         if index == self.last_line {
             return Vec::new();
         }
@@ -123,11 +164,13 @@ impl Watcher {
     }
 
     /// Handles a finished fetch. Results for a track that is no longer
-    /// current are cached but not shown.
+    /// current are cached but not shown; failures for the current track are
+    /// retried with backoff.
     pub fn on_fetched(
         &mut self,
         track: TrackInfo,
         result: Result<Option<FoundLyrics>, String>,
+        now_ms: i64,
     ) -> Vec<Effect> {
         let current = self.settler.settled() == Some(&track);
         match result {
@@ -141,8 +184,22 @@ impl Watcher {
                 effects
             }
             Err(e) if current => {
-                self.state = LyricsState::Failed;
-                vec![Effect::Print(format!("  lyrics lookup failed: {e}"))]
+                let attempt = match self.state {
+                    LyricsState::Loading { attempt } => attempt,
+                    _ => 1,
+                };
+                let delay = RETRY_DELAYS_MS.get(attempt - 1).copied();
+                self.state = LyricsState::Failed {
+                    attempt,
+                    retry_at: delay.map(|d| now_ms + d),
+                };
+                let next = match delay {
+                    Some(d) => format!("retrying in {}s", d / 1000),
+                    None => "giving up for this track".into(),
+                };
+                vec![Effect::Print(format!(
+                    "  lyrics lookup failed: {e}; {next}"
+                ))]
             }
             Err(_) => Vec::new(),
         }
@@ -154,8 +211,12 @@ impl Watcher {
         };
         let lyrics = match &self.state {
             LyricsState::Idle => "",
-            LyricsState::Loading => "lyrics: loading…",
-            LyricsState::Failed => "lyrics: error",
+            LyricsState::Loading { attempt: 1 } => "lyrics: loading…",
+            LyricsState::Loading { .. } => "lyrics: retrying…",
+            LyricsState::Failed {
+                retry_at: Some(_), ..
+            } => "lyrics: error, will retry",
+            LyricsState::Failed { retry_at: None, .. } => "lyrics: error",
             LyricsState::Ready(None) => "lyrics: none",
             LyricsState::Ready(Some(f)) => match f.lyrics {
                 Lyrics::Synced(_) => "lyrics: synced",
@@ -248,7 +309,7 @@ pub fn run(
 
         let mut effects = watcher.tick(snapshot.as_ref(), now);
         while let Ok((track, result)) = rx.try_recv() {
-            effects.extend(watcher.on_fetched(track, result));
+            effects.extend(watcher.on_fetched(track, result, now));
         }
 
         for effect in effects {
@@ -329,7 +390,7 @@ mod tests {
         assert!(w.tick(Some(&playing(t, 0, 0)), 0).is_empty());
         let effects = w.tick(Some(&playing(t, 0, 0)), 1_000);
         assert!(effects.contains(&Effect::Fetch(t.clone())));
-        w.on_fetched(t.clone(), Ok(result));
+        w.on_fetched(t.clone(), Ok(result), 1_000);
         w
     }
 
@@ -401,7 +462,7 @@ mod tests {
         let mut w = Watcher::new(1_000, 500);
         w.tick(Some(&playing(&t, 0, 0)), 0);
         w.tick(Some(&playing(&t, 0, 0)), 1_000);
-        w.on_fetched(t.clone(), Ok(synced()));
+        w.on_fetched(t.clone(), Ok(synced()), 1_000);
         // At 2.5 s playback, +500 ms offset reaches line two at 3.0 s.
         let effects = w.tick(Some(&playing(&t, 0, 0)), 2_500);
         assert_eq!(printed(&effects)[0], "  [00:03.0] line two");
@@ -431,7 +492,7 @@ mod tests {
         w.tick(Some(&playing(&a, 0, 0)), 1_000); // fetch A
         w.tick(Some(&playing(&b, 0, 2_000)), 2_000);
         w.tick(Some(&playing(&b, 0, 2_000)), 3_000); // fetch B
-        assert!(w.on_fetched(a.clone(), Ok(synced())).is_empty());
+        assert!(w.on_fetched(a.clone(), Ok(synced()), 2_000).is_empty());
         assert!(
             w.status(Some(&playing(&b, 0, 2_000)), 3_000)
                 .contains("loading")
@@ -460,14 +521,14 @@ mod tests {
         let mut w = Watcher::new(1_000, 0);
         w.tick(Some(&playing(&t, 0, 0)), 0);
         w.tick(Some(&playing(&t, 0, 0)), 1_000);
-        let effects = w.on_fetched(t.clone(), Ok(found(Lyrics::Plain("a\nb".into()))));
+        let effects = w.on_fetched(t.clone(), Ok(found(Lyrics::Plain("a\nb".into()))), 1_000);
         assert_eq!(printed(&effects)[1..], ["    a", "    b"]);
 
         let mut w = Watcher::new(1_000, 0);
         w.tick(Some(&playing(&t, 0, 0)), 0);
         w.tick(Some(&playing(&t, 0, 0)), 1_000);
         assert_eq!(
-            printed(&w.on_fetched(t.clone(), Ok(None))),
+            printed(&w.on_fetched(t.clone(), Ok(None), 1_000)),
             vec!["  no lyrics found"]
         );
     }
@@ -478,9 +539,101 @@ mod tests {
         let mut w = Watcher::new(1_000, 0);
         w.tick(Some(&playing(&t, 0, 0)), 0);
         w.tick(Some(&playing(&t, 0, 0)), 1_000);
-        let effects = w.on_fetched(t.clone(), Err("timeout".into()));
-        assert_eq!(printed(&effects), vec!["  lyrics lookup failed: timeout"]);
+        let effects = w.on_fetched(t.clone(), Err("timeout".into()), 1_000);
+        assert_eq!(
+            printed(&effects),
+            vec!["  lyrics lookup failed: timeout; retrying in 5s"]
+        );
         assert!(!w.cache.contains_key(&t));
+    }
+
+    fn fetches(effects: &[Effect]) -> usize {
+        effects
+            .iter()
+            .filter(|e| matches!(e, Effect::Fetch(_)))
+            .count()
+    }
+
+    #[test]
+    fn failed_lookups_are_retried_with_backoff_then_given_up() {
+        let t = track("Song");
+        let snap = playing(&t, 0, 0);
+        let mut w = Watcher::new(1_000, 0);
+        w.tick(Some(&snap), 0);
+        assert_eq!(fetches(&w.tick(Some(&snap), 1_000)), 1);
+
+        let mut now = 1_000;
+        let announced = [
+            "retrying in 5s",
+            "retrying in 15s",
+            "retrying in 30s",
+            "retrying in 60s",
+        ];
+        for (delay, message) in RETRY_DELAYS_MS.iter().zip(announced) {
+            let effects = w.on_fetched(t.clone(), Err("http status: 503".into()), now);
+            assert!(printed(&effects)[0].ends_with(message), "{effects:?}");
+            assert_eq!(fetches(&w.tick(Some(&snap), now + delay - 1)), 0);
+            now += delay;
+            assert_eq!(fetches(&w.tick(Some(&snap), now)), 1);
+            assert!(w.status(Some(&snap), now).contains("retrying"));
+        }
+
+        // The fifth lookup fails too: stop.
+        let effects = w.on_fetched(t.clone(), Err("http status: 503".into()), now);
+        assert!(printed(&effects)[0].ends_with("giving up for this track"));
+        assert_eq!(fetches(&w.tick(Some(&snap), now + 600_000)), 0);
+        assert!(w.status(Some(&snap), now).contains("lyrics: error"));
+    }
+
+    #[test]
+    fn retry_succeeds() {
+        let t = track("Song");
+        let snap = playing(&t, 0, 0);
+        let mut w = Watcher::new(1_000, 0);
+        w.tick(Some(&snap), 0);
+        w.tick(Some(&snap), 1_000);
+        w.on_fetched(t.clone(), Err("503".into()), 1_000);
+        assert_eq!(fetches(&w.tick(Some(&snap), 6_000)), 1);
+        let effects = w.on_fetched(t.clone(), Ok(synced()), 6_500);
+        assert!(printed(&effects)[0].contains("synced lyrics from LRCLIB"));
+        assert!(w.status(Some(&snap), 6_500).contains("lyrics: synced"));
+    }
+
+    #[test]
+    fn no_retry_after_switching_tracks() {
+        let a = track("A");
+        let b = track("B");
+        let mut w = Watcher::new(1_000, 0);
+        w.tick(Some(&playing(&a, 0, 0)), 0);
+        w.tick(Some(&playing(&a, 0, 0)), 1_000);
+        w.on_fetched(a.clone(), Err("503".into()), 1_000);
+        w.tick(Some(&playing(&b, 0, 2_000)), 2_000);
+        let settle_b = w.tick(Some(&playing(&b, 0, 2_000)), 3_000);
+        assert_eq!(settle_b.last(), Some(&Effect::Fetch(b.clone())));
+        // A's retry time passes while B is loading: nothing for A.
+        assert_eq!(fetches(&w.tick(Some(&playing(&b, 0, 2_000)), 10_000)), 0);
+    }
+
+    #[test]
+    fn pause_report_slightly_behind_does_not_flash_previous_line() {
+        let t = track("Song");
+        let mut w = settled_with(&t, synced());
+        // Playing past line four (6.0 s).
+        assert_eq!(
+            printed(&w.tick(Some(&playing(&t, 0, 0)), 6_100)),
+            vec!["  [00:06.0] line four"]
+        );
+        // Paused: Spotify reports 5.85 s, before line four's start.
+        let mut paused = playing(&t, 5_850, 6_150);
+        paused.status = PlaybackStatus::Paused;
+        assert!(w.tick(Some(&paused), 6_200).is_empty());
+        // A real seek back (more than the tolerance) still moves.
+        let mut seeked = playing(&t, 5_200, 7_000);
+        seeked.status = PlaybackStatus::Paused;
+        assert_eq!(
+            printed(&w.tick(Some(&seeked), 7_000)),
+            vec!["  [00:05.0] ♪"]
+        );
     }
 
     #[test]
