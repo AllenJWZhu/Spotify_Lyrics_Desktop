@@ -17,7 +17,7 @@ mod worker;
 
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State, WindowEvent};
@@ -100,11 +100,13 @@ fn spawn_housekeeping(app: AppHandle) -> std::io::Result<()> {
     thread::Builder::new()
         .name("housekeeping".into())
         .spawn(move || {
-            for tick in 0u64.. {
+            let mut last_flush = Instant::now();
+            loop {
                 let controller = app.state::<Controller>();
                 controller.pointer_tick();
-                if tick % 10 == 0 {
+                if last_flush.elapsed() >= Duration::from_millis(500) {
                     controller.flush();
+                    last_flush = Instant::now();
                 }
                 thread::sleep(Duration::from_millis(50));
             }
