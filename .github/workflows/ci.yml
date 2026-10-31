@@ -35,7 +35,13 @@ jobs:
       - name: Format
         run: cargo fmt --all --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        # Uncoloured output so the problem matcher can turn diagnostics into
+        # annotations on the PR.
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          echo "::add-matcher::.github/rust-problem-matcher.json"
+          cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
       - name: Overlay UI tests
