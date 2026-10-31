@@ -2,8 +2,9 @@ name: Release
 
 # Pushing a tag like v0.1.0 builds the Windows installer and a portable zip
 # and creates a *draft* GitHub release with them; publish it by hand after a
-# look. Pull requests that touch packaging build the same files as a dry run
-# (downloadable from the run page) without releasing anything.
+# look. Pull requests that change the app build the same files as a dry run
+# without releasing anything, so the installer can be tried before merging
+# (download from the run page).
 
 on:
   push:
@@ -11,8 +12,9 @@ on:
   pull_request:
     paths:
       - ".github/workflows/release.yml"
-      - "crates/app/tauri.conf.json"
-      - "crates/app/icons/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
   workflow_dispatch:
 
 permissions:
