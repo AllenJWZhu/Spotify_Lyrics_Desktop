@@ -2023,7 +2023,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "lyrics-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2034,7 +2034,7 @@ dependencies = [
 
 [[package]]
 name = "lyrics-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "log",
  "rusqlite",
@@ -2047,7 +2047,7 @@ dependencies = [
 
 [[package]]
 name = "lyrics-overlay"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "log",
  "lyrics-core",
@@ -2059,6 +2059,18 @@ dependencies = [
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-updater",
+]
+
+[[package]]
+name = "lyrics-overlay-setup"
+version = "0.1.2"
+dependencies = [
+ "dirs 6.0.0",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "winreg 0.56.0",
 ]
 
 [[package]]

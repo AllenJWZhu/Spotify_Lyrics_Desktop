@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the setup page may do: receive events, call the setup's own commands, and start a window drag.",
+  "windows": ["setup"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

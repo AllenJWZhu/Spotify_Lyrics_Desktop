@@ -1,6 +1,13 @@
 # Changelog
 
-## [0.1.1] - Unreleased
+## [0.1.2] - Unreleased
+
+**Installer**
+- A new setup window in the app's own style replaces the Windows wizard: one **Install** button, with a desktop shortcut and Start with Windows under **Options**, then **Open Lyrics Overlay**. In English or Chinese, following Windows.
+- The classic wizard is still published (`-classic-setup.exe`), now with the app's icon and artwork; it opens by itself on PCs without the WebView2 runtime.
+- Updates install silently in the background (from 0.1.2 on); before, a progress window showed.
+
+## [0.1.1] - 2026-10-31
 
 **Updates**
 - The overlay checks for a new version shortly after it starts and every few hours, and offers to install it: one click downloads it, installs it and restarts the overlay. **Check for updates** in the tray checks right away.

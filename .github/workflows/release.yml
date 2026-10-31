@@ -2,7 +2,13 @@ name: Release
 
 # Pushing a tag like v0.1.0 builds the Windows installer and a portable zip
 # and creates a *draft* GitHub release with them; publish it by hand after a
-# look. Pull requests that change the app build the same files as a dry run
+# look.
+#
+# Two installers: LyricsOverlay-x.y.z-setup.exe is the one people download,
+# a window in the app's own style (crates/setup) with the NSIS installer
+# embedded and run silently. The NSIS installer is also published on its own
+# as -classic-setup.exe: it's what in-app updates download, and the fallback
+# on machines without WebView2. Pull requests that change the app build the same files as a dry run
 # without releasing anything, so the installer can be tried before merging
 # (download from the run page).
 #
@@ -72,12 +78,19 @@ jobs:
             npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build --ci
           fi
 
+      - name: Build setup window
+        run: |
+          payload=$(ls target/release/bundle/nsis/*-setup.exe | head -1)
+          LYRICS_SETUP_PAYLOAD=$(cygpath -w "$PWD/$payload") \
+            cargo build --release -p lyrics-overlay-setup
+
       - name: Collect release files
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p dist portable
-          cp target/release/bundle/nsis/*-setup.exe "dist/LyricsOverlay-$VERSION-setup.exe"
+          cp target/release/lyrics-overlay-setup.exe "dist/LyricsOverlay-$VERSION-setup.exe"
+          cp target/release/bundle/nsis/*-setup.exe "dist/LyricsOverlay-$VERSION-classic-setup.exe"
           cp target/release/lyrics-overlay.exe portable/LyricsOverlay.exe
           (cd portable && 7z a -bso0 "../dist/LyricsOverlay-$VERSION-portable.zip" LyricsOverlay.exe)
           (cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
@@ -87,13 +100,13 @@ jobs:
           if [ -n "$sig" ]; then
             # Will installed copies (which trust the key in tauri.conf.json) accept it?
             node .github/scripts/verify-update-signature.mjs \
-              "dist/LyricsOverlay-$VERSION-setup.exe" "$sig" crates/app/tauri.conf.json
+              "dist/LyricsOverlay-$VERSION-classic-setup.exe" "$sig" crates/app/tauri.conf.json
             awk -v v="$VERSION" '
               /^## / { inside = index($0, "[" v "]") > 0; next }
               inside
             ' CHANGELOG.md > notes.md
             .github/scripts/updater-manifest.sh "$VERSION" windows-x86_64 \
-              "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/LyricsOverlay-$VERSION-setup.exe" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION/LyricsOverlay-$VERSION-classic-setup.exe" \
               "$sig" notes.md > dist/latest.json
             jq '.platforms' dist/latest.json
           fi
