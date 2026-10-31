@@ -1,0 +1,84 @@
+name: Release
+
+# Pushing a tag like v0.1.0 builds the Windows installer and a portable zip
+# and creates a *draft* GitHub release with them; publish it by hand after a
+# look. Pull requests that touch packaging build the same files as a dry run
+# (downloadable from the run page) without releasing anything.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "crates/app/tauri.conf.json"
+      - "crates/app/icons/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TAURI_CLI_VERSION: "2.12.4"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "lyrics-overlay") | .version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match the crate version $version"
+            exit 1
+          fi
+
+      - name: Build installer
+        working-directory: crates/app
+        run: npx --yes "@tauri-apps/cli@$TAURI_CLI_VERSION" build --ci
+
+      - name: Collect release files
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist portable
+          cp target/release/bundle/nsis/*-setup.exe "dist/LyricsOverlay-$VERSION-setup.exe"
+          cp target/release/lyrics-overlay.exe portable/LyricsOverlay.exe
+          (cd portable && 7z a -bso0 "../dist/LyricsOverlay-$VERSION-portable.zip" LyricsOverlay.exe)
+          (cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lyrics-overlay-${{ steps.version.outputs.version }}
+          path: dist/*
+
+      - name: Create draft release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Notes are this version's section of CHANGELOG.md.
+          awk -v v="$VERSION" '
+            /^## / { inside = index($0, "[" v "]") > 0; next }
+            inside
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::CHANGELOG.md has no section for $VERSION"; exit 1; }
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --draft \
+            --title "Lyrics Overlay $VERSION" \
+            --notes-file notes.md
