@@ -55,8 +55,14 @@ test("non-synced lookups show the track and a status", () => {
     [{ lookup: "missing" }, "No lyrics found for this song"],
     [{ lookup: "plain" }, "Only unsynced lyrics exist for this song"],
     [{ lookup: "instrumental" }, "Instrumental"],
-    [{ lookup: "error", retrying: true }, "Couldn't reach LRCLIB, retrying…"],
-    [{ lookup: "error", retrying: false }, "Couldn't reach LRCLIB. Use the tray menu to try again"],
+    [
+      { lookup: "error", retrying: true, error: "LRCLIB is having problems right now (HTTP 502)" },
+      "LRCLIB is having problems right now (HTTP 502). Trying again automatically",
+    ],
+    [
+      { lookup: "error", retrying: false, error: null },
+      "Couldn't get lyrics from LRCLIB. Use “Look up lyrics again” in the tray menu to retry",
+    ],
   ];
   for (const [extra, text] of cases) {
     const v = computeView({ ...synced, lines: [], ...extra }, null, 0);

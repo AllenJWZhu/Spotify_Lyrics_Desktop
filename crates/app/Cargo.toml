@@ -11,6 +11,7 @@ repository.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+log = { version = "0.4", features = ["std"] }
 lyrics-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -63,6 +63,71 @@ pub enum LyricsError {
     Other(String),
 }
 
+/// Why a lookup failed, in terms that tell the user whose problem it is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureKind {
+    /// The service answered with a server error (5xx): it is down or
+    /// overloaded. Nothing to fix locally.
+    ServiceDown(u16),
+    /// The service asked us to slow down (429).
+    RateLimited,
+    /// No answer in time.
+    TimedOut,
+    /// This computer couldn't reach the service: offline, DNS, refused.
+    NoConnection,
+    /// The system proxy couldn't be used.
+    Proxy,
+    /// The secure connection failed (certificates, TLS).
+    Secure,
+    /// Anything else, e.g. an unexpected response. Not worth retrying.
+    Other,
+}
+
+impl FailureKind {
+    /// Whether trying again later could help.
+    pub fn is_retryable(self) -> bool {
+        self != FailureKind::Other
+    }
+
+    /// One sentence for the overlay.
+    pub fn message(self) -> String {
+        match self {
+            FailureKind::ServiceDown(status) => {
+                format!("LRCLIB is having problems right now (HTTP {status})")
+            }
+            FailureKind::RateLimited => "LRCLIB is limiting requests right now".into(),
+            FailureKind::TimedOut => "LRCLIB isn't responding".into(),
+            FailureKind::NoConnection => {
+                "Can't connect to lrclib.net. Check your internet connection".into()
+            }
+            FailureKind::Proxy => "Can't connect through your system proxy".into(),
+            FailureKind::Secure => "Couldn't make a secure connection to lrclib.net".into(),
+            FailureKind::Other => "Couldn't get lyrics from LRCLIB".into(),
+        }
+    }
+}
+
+impl LyricsError {
+    pub fn kind(&self) -> FailureKind {
+        use std::io::ErrorKind;
+        let LyricsError::Http(e) = self else {
+            return FailureKind::Other;
+        };
+        match e {
+            ureq::Error::StatusCode(429) => FailureKind::RateLimited,
+            ureq::Error::StatusCode(s) if *s >= 500 => FailureKind::ServiceDown(*s),
+            ureq::Error::Timeout(_) => FailureKind::TimedOut,
+            ureq::Error::Io(io) if io.kind() == ErrorKind::TimedOut => FailureKind::TimedOut,
+            ureq::Error::HostNotFound | ureq::Error::ConnectionFailed | ureq::Error::Io(_) => {
+                FailureKind::NoConnection
+            }
+            ureq::Error::ConnectProxyFailed(_) | ureq::Error::InvalidProxyUrl => FailureKind::Proxy,
+            ureq::Error::Tls(_) | ureq::Error::Rustls(_) => FailureKind::Secure,
+            _ => FailureKind::Other,
+        }
+    }
+}
+
 /// A source of lyrics for a track.
 pub trait LyricsProvider: Send + Sync {
     /// `Ok(None)` means the provider has nothing for this track. Errors are
@@ -90,6 +155,49 @@ mod tests {
             Some(Lyrics::Instrumental)
         );
         assert_eq!(Lyrics::from_parts(None, None, false), None);
+    }
+
+    #[test]
+    fn failures_are_classified_by_whose_problem_it_is() {
+        use std::io;
+        let http = |e: ureq::Error| LyricsError::Http(e).kind();
+        assert_eq!(
+            http(ureq::Error::StatusCode(502)),
+            FailureKind::ServiceDown(502)
+        );
+        assert_eq!(
+            http(ureq::Error::StatusCode(503)),
+            FailureKind::ServiceDown(503)
+        );
+        assert_eq!(http(ureq::Error::StatusCode(429)), FailureKind::RateLimited);
+        assert_eq!(http(ureq::Error::StatusCode(400)), FailureKind::Other);
+        assert_eq!(http(ureq::Error::HostNotFound), FailureKind::NoConnection);
+        assert_eq!(
+            http(ureq::Error::ConnectionFailed),
+            FailureKind::NoConnection
+        );
+        assert_eq!(
+            http(ureq::Error::Io(io::Error::from(
+                io::ErrorKind::ConnectionRefused
+            ))),
+            FailureKind::NoConnection
+        );
+        assert_eq!(
+            http(ureq::Error::Io(io::Error::from(io::ErrorKind::TimedOut))),
+            FailureKind::TimedOut
+        );
+        assert_eq!(
+            http(ureq::Error::ConnectProxyFailed("x".into())),
+            FailureKind::Proxy
+        );
+        assert_eq!(LyricsError::Other("x".into()).kind(), FailureKind::Other);
+
+        assert!(FailureKind::ServiceDown(502).is_retryable());
+        assert!(!FailureKind::Other.is_retryable());
+        assert_eq!(
+            FailureKind::ServiceDown(502).message(),
+            "LRCLIB is having problems right now (HTTP 502)"
+        );
     }
 
     #[test]

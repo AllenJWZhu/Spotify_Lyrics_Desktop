@@ -26,6 +26,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
         Some("Ctrl+Alt+L"),
     )?;
     let refresh = MenuItem::with_id(app, "refresh", "Look up lyrics again", true, None::<&str>)?;
+    let logs = MenuItem::with_id(app, "logs", "Open log folder", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -34,6 +35,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
             &locked,
             &PredefinedMenuItem::separator(app)?,
             &refresh,
+            &logs,
             &PredefinedMenuItem::separator(app)?,
             &quit,
         ],
@@ -48,6 +50,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
                 "visible" => controller.toggle_visible(),
                 "locked" => controller.toggle_locked(),
                 "refresh" => controller.refresh_lyrics(),
+                "logs" => controller.open_log_folder(),
                 "quit" => crate::quit(app),
                 _ => {}
             }

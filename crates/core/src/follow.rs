@@ -9,13 +9,32 @@
 
 use std::collections::HashMap;
 
-use crate::lyrics::{FoundLyrics, Lyrics, SyncedLyrics};
+use crate::lyrics::{FoundLyrics, Lyrics, LyricsError, SyncedLyrics};
 use crate::player::{PlayerSnapshot, SettleEvent, TrackInfo, TrackSettler};
 
-/// Waits before refetching after a failed lookup. A track plays for
-/// minutes, so it's worth outlasting an LRCLIB overload (503) that the
-/// transport's own short retries didn't.
+/// Waits before refetching after a failed lookup: quick at first for a
+/// blip, then [`STEADY_RETRY_MS`] for as long as the track stays current,
+/// so lyrics appear on their own once the service is back.
 pub const RETRY_DELAYS_MS: [i64; 4] = [5_000, 15_000, 30_000, 60_000];
+pub const STEADY_RETRY_MS: i64 = 120_000;
+
+/// A failed lookup, as the follower needs it: what to tell the user, and
+/// whether trying again could help.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FetchError {
+    pub message: String,
+    pub retryable: bool,
+}
+
+impl From<&LyricsError> for FetchError {
+    fn from(e: &LyricsError) -> Self {
+        let kind = e.kind();
+        Self {
+            message: kind.message(),
+            retryable: kind.is_retryable(),
+        }
+    }
+}
 
 /// Backward position corrections smaller than this are treated as noise,
 /// not seeks. Spotify's report on pause lands ~200 ms behind playback, which
@@ -34,8 +53,8 @@ pub enum FollowEvent {
     /// The lookup for the current track finished, from cache or a fetch.
     /// `None` means no lyrics exist for it.
     LyricsReady(Option<FoundLyrics>),
-    /// The lookup for the current track failed. `retry_in_ms` is `None` once
-    /// retries are used up.
+    /// The lookup for the current track failed. `retry_in_ms` is `None`
+    /// when retrying can't help.
     LookupFailed {
         error: String,
         retry_in_ms: Option<i64>,
@@ -55,10 +74,11 @@ pub enum LookupState {
     },
     Ready(Option<FoundLyrics>),
     /// The last lookup failed. `retry_at_ms` is when to try again, or
-    /// `None` once retries are used up.
+    /// `None` when retrying can't help.
     Failed {
         attempt: usize,
         retry_at_ms: Option<i64>,
+        error: String,
     },
 }
 
@@ -166,6 +186,7 @@ impl Follower {
         if let LookupState::Failed {
             attempt,
             retry_at_ms: Some(retry_at),
+            ..
         } = self.state
         {
             // Failed is only ever set for the settled track.
@@ -208,12 +229,12 @@ impl Follower {
     }
 
     /// Handles a finished fetch. Results for a track that is no longer
-    /// current are cached but not reported; failures for the current track
-    /// are retried with backoff.
+    /// current are cached but not reported; retryable failures for the
+    /// current track are retried with backoff for as long as it plays.
     pub fn on_fetched(
         &mut self,
         track: TrackInfo,
-        result: Result<Option<FoundLyrics>, String>,
+        result: Result<Option<FoundLyrics>, FetchError>,
         now_ms: i64,
     ) -> Vec<FollowEvent> {
         let current = self.settler.settled() == Some(&track);
@@ -231,12 +252,21 @@ impl Follower {
                     LookupState::Loading { attempt } => attempt,
                     _ => 1,
                 };
-                let retry_in_ms = RETRY_DELAYS_MS.get(attempt - 1).copied();
+                let retry_in_ms = error.retryable.then(|| {
+                    RETRY_DELAYS_MS
+                        .get(attempt - 1)
+                        .copied()
+                        .unwrap_or(STEADY_RETRY_MS)
+                });
                 self.state = LookupState::Failed {
                     attempt,
                     retry_at_ms: retry_in_ms.map(|d| now_ms + d),
+                    error: error.message.clone(),
                 };
-                vec![FollowEvent::LookupFailed { error, retry_in_ms }]
+                vec![FollowEvent::LookupFailed {
+                    error: error.message,
+                    retry_in_ms,
+                }]
             }
             Err(_) => Vec::new(),
         }
@@ -426,8 +456,15 @@ mod tests {
         );
     }
 
+    fn down() -> FetchError {
+        FetchError {
+            message: "LRCLIB is having problems right now (HTTP 502)".into(),
+            retryable: true,
+        }
+    }
+
     #[test]
-    fn failed_lookups_are_retried_with_backoff_then_given_up() {
+    fn retryable_failures_back_off_then_retry_steadily() {
         let t = track("Song");
         let snap = playing(&t, 0, 0);
         let mut f = Follower::new(1_000, 0);
@@ -435,29 +472,51 @@ mod tests {
         assert_eq!(fetches(&f.tick(Some(&snap), 1_000)), 1);
 
         let mut now = 1_000;
-        for delay in RETRY_DELAYS_MS {
+        let delays = RETRY_DELAYS_MS.iter().copied().chain([STEADY_RETRY_MS; 3]);
+        for delay in delays {
             assert_eq!(
-                f.on_fetched(t.clone(), Err("http status: 503".into()), now),
+                f.on_fetched(t.clone(), Err(down()), now),
                 vec![FollowEvent::LookupFailed {
-                    error: "http status: 503".into(),
+                    error: down().message,
                     retry_in_ms: Some(delay),
                 }]
             );
+            match f.state() {
+                LookupState::Failed { error, .. } => assert_eq!(error, &down().message),
+                other => panic!("{other:?}"),
+            }
             assert_eq!(fetches(&f.tick(Some(&snap), now + delay - 1)), 0);
             now += delay;
             assert_eq!(fetches(&f.tick(Some(&snap), now)), 1);
         }
+    }
 
-        // The fifth lookup fails too: stop.
-        let events = f.on_fetched(t.clone(), Err("http status: 503".into()), now);
+    #[test]
+    fn non_retryable_failures_are_not_retried() {
+        let t = track("Song");
+        let snap = playing(&t, 0, 0);
+        let mut f = Follower::new(1_000, 0);
+        f.tick(Some(&snap), 0);
+        f.tick(Some(&snap), 1_000);
+        let bad = FetchError {
+            message: "Couldn't get lyrics from LRCLIB".into(),
+            retryable: false,
+        };
         assert_eq!(
-            events,
+            f.on_fetched(t.clone(), Err(bad.clone()), 1_000),
             vec![FollowEvent::LookupFailed {
-                error: "http status: 503".into(),
+                error: bad.message,
                 retry_in_ms: None,
             }]
         );
-        assert_eq!(fetches(&f.tick(Some(&snap), now + 600_000)), 0);
+        assert_eq!(fetches(&f.tick(Some(&snap), 600_000)), 0);
+    }
+
+    #[test]
+    fn errors_map_to_user_messages() {
+        let e = FetchError::from(&LyricsError::Other("bad json".into()));
+        assert!(!e.retryable);
+        assert_eq!(e.message, "Couldn't get lyrics from LRCLIB");
     }
 
     #[test]
@@ -467,7 +526,7 @@ mod tests {
         let mut f = Follower::new(1_000, 0);
         f.tick(Some(&snap), 0);
         f.tick(Some(&snap), 1_000);
-        f.on_fetched(t.clone(), Err("503".into()), 1_000);
+        f.on_fetched(t.clone(), Err(down()), 1_000);
         assert_eq!(fetches(&f.tick(Some(&snap), 6_000)), 1);
         assert_eq!(f.state(), &LookupState::Loading { attempt: 2 });
         assert_eq!(
@@ -483,7 +542,7 @@ mod tests {
         let mut f = Follower::new(1_000, 0);
         f.tick(Some(&playing(&a, 0, 0)), 0);
         f.tick(Some(&playing(&a, 0, 0)), 1_000);
-        f.on_fetched(a.clone(), Err("503".into()), 1_000);
+        f.on_fetched(a.clone(), Err(down()), 1_000);
         f.tick(Some(&playing(&b, 0, 2_000)), 2_000);
         let settle_b = f.tick(Some(&playing(&b, 0, 2_000)), 3_000);
         assert_eq!(
@@ -492,10 +551,7 @@ mod tests {
         );
         assert_eq!(fetches(&f.tick(Some(&playing(&b, 0, 2_000)), 10_000)), 0);
         // A's late failure is ignored.
-        assert!(
-            f.on_fetched(a.clone(), Err("503".into()), 10_000)
-                .is_empty()
-        );
+        assert!(f.on_fetched(a.clone(), Err(down()), 10_000).is_empty());
     }
 
     #[test]

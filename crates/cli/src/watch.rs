@@ -11,7 +11,7 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use lyrics_core::follow::{FollowEvent, Follower, LookupState};
+use lyrics_core::follow::{FetchError, FollowEvent, Follower, LookupState};
 use lyrics_core::lyrics::{FoundLyrics, Lyrics, LyricsProvider, SyncedLyrics};
 use lyrics_core::player::{PlayerSnapshot, PlayerSource, TrackInfo, now_unix_ms};
 
@@ -121,7 +121,7 @@ pub fn status(follower: &Follower, snapshot: Option<&PlayerSnapshot>, now_ms: i6
     )
 }
 
-type FetchResult = (TrackInfo, Result<Option<FoundLyrics>, String>);
+type FetchResult = (TrackInfo, Result<Option<FoundLyrics>, FetchError>);
 
 pub fn run(
     source: &impl PlayerSource,
@@ -153,7 +153,11 @@ pub fn run(
                 let tx = tx.clone();
                 let track = track.clone();
                 thread::spawn(move || {
-                    let result = provider.fetch(&track).map_err(|e| e.to_string());
+                    // The terminal can show the technical detail too.
+                    let result = provider.fetch(&track).map_err(|e| FetchError {
+                        message: format!("{} ({e})", e.kind().message()),
+                        retryable: e.kind().is_retryable(),
+                    });
                     // The receiver only goes away when we exit.
                     let _ = tx.send((track, result));
                 });
@@ -226,7 +230,7 @@ mod tests {
             let events = self.follower.tick(Some(snap), now);
             self.apply(events);
         }
-        fn fetched(&mut self, result: Result<Option<FoundLyrics>, String>, now: i64) {
+        fn fetched(&mut self, result: Result<Option<FoundLyrics>, FetchError>, now: i64) {
             let events = self.follower.on_fetched(track(), result, now);
             self.apply(events);
         }
@@ -268,10 +272,18 @@ mod tests {
         h.tick(&playing(0, 0), 0);
         h.tick(&playing(0, 0), 1_000);
         h.take();
-        h.fetched(Err("http status: 503".into()), 1_000);
+        h.fetched(
+            Err(FetchError {
+                message: "LRCLIB is having problems right now (HTTP 503)".into(),
+                retryable: true,
+            }),
+            1_000,
+        );
         assert_eq!(
             h.take(),
-            vec!["  lyrics lookup failed: http status: 503; retrying in 5s"]
+            vec![
+                "  lyrics lookup failed: LRCLIB is having problems right now (HTTP 503); retrying in 5s"
+            ]
         );
         h.tick(&playing(0, 0), 6_000);
         h.fetched(Ok(found(Lyrics::Plain("a\nb".into()))), 6_000);

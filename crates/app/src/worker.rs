@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use lyrics_core::follow::{FollowEvent, Follower};
+use lyrics_core::follow::{FetchError, FollowEvent, Follower};
 use lyrics_core::lyrics::cache::LyricsCache;
 use lyrics_core::lyrics::{FoundLyrics, LyricsProvider};
 use lyrics_core::player::{PlayerAction, PlayerSource, TrackInfo, now_unix_ms};
@@ -72,7 +72,7 @@ pub fn spawn(
     Ok(())
 }
 
-type FetchResult = (TrackInfo, Result<Option<FoundLyrics>, String>);
+type FetchResult = (TrackInfo, Result<Option<FoundLyrics>, FetchError>);
 
 fn run(
     app: AppHandle,
@@ -106,13 +106,13 @@ fn run(
                 }
                 WorkerCommand::Control(action) => {
                     if let Err(e) = source.control(action) {
-                        eprintln!("player control failed: {e}");
+                        log::warn!("player control failed: {e}");
                     }
                 }
                 WorkerCommand::Refresh => {
                     if let (Some(cache), Some(track)) = (&cache, follower.track()) {
                         if let Err(e) = cache.remove(track) {
-                            eprintln!("{e}");
+                            log::warn!("{e}");
                         }
                     }
                     events.extend(follower.refresh());
@@ -175,10 +175,36 @@ fn spawn_fetch(
 ) {
     let provider = Arc::clone(provider);
     thread::spawn(move || {
-        let result = provider.fetch(&track).map_err(|e| e.to_string());
+        let result = provider.fetch(&track);
+        match &result {
+            Ok(Some(found)) => log::info!(
+                "lyrics for {:?} by {:?}: {} from {}",
+                track.title,
+                track.artist,
+                kind_name(&found.lyrics),
+                found.source
+            ),
+            Ok(None) => log::info!("no lyrics for {:?} by {:?}", track.title, track.artist),
+            // The full error (status, proxy, TLS…) goes to the log; the page
+            // gets a sentence about whose problem it is.
+            Err(e) => log::warn!(
+                "lyrics lookup for {:?} by {:?} failed: {e}",
+                track.title,
+                track.artist
+            ),
+        }
+        let result = result.map_err(|e| FetchError::from(&e));
         // The receiver lives as long as the worker, i.e. the app.
         let _ = tx.send((track, result));
     });
+}
+
+fn kind_name(lyrics: &lyrics_core::lyrics::Lyrics) -> &'static str {
+    match lyrics {
+        lyrics_core::lyrics::Lyrics::Synced(_) => "synced",
+        lyrics_core::lyrics::Lyrics::Plain(_) => "plain",
+        lyrics_core::lyrics::Lyrics::Instrumental => "instrumental",
+    }
 }
 
 fn demo_parts() -> Parts {
@@ -204,7 +230,7 @@ fn lyrics_provider(
             (Arc::new(provider), Some(cache))
         }
         Some(Err(e)) => {
-            eprintln!("{e}; lyrics won't be cached");
+            log::warn!("{e}; lyrics won't be cached");
             (Arc::new(Lrclib::new()), None)
         }
         None => (Arc::new(Lrclib::new()), None),

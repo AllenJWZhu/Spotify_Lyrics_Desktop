@@ -236,3 +236,40 @@ fn full_lookup_falls_through_to_search() {
     assert_eq!(search.param("track_name"), Some("Song"));
     assert_eq!(search.param("artist_name"), Some("Made Up"));
 }
+
+/// A "proxy" that accepts connections and hangs up, counting them.
+fn broken_proxy() -> (String, Arc<AtomicUsize>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let hits = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&hits);
+    thread::spawn(move || {
+        for stream in listener.incoming() {
+            if stream.is_ok() {
+                counter.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    });
+    (url, hits)
+}
+
+#[test]
+fn falls_back_to_direct_when_the_proxy_fails() {
+    let (proxy_url, proxy_hits) = broken_proxy();
+    let (base, seen) = serve(Box::new(|_| (200, RECORD.to_string())));
+    let proxy = ureq::Proxy::new(&proxy_url).unwrap();
+    let transport = HttpTransport::with_proxy("t", &base, Some(proxy)).with_retry_delays(no_wait());
+    let query = GetQuery {
+        track_name: "x".into(),
+        artist_name: "y".into(),
+        album_name: None,
+        duration_s: None,
+    };
+
+    assert!(transport.get(&query).unwrap().is_some());
+    assert_eq!(proxy_hits.load(Ordering::SeqCst), 1);
+    // Once direct worked, later requests skip the broken proxy.
+    assert!(transport.get(&query).unwrap().is_some());
+    assert_eq!(proxy_hits.load(Ordering::SeqCst), 1);
+    assert_eq!(seen.lock().unwrap().len(), 2);
+}

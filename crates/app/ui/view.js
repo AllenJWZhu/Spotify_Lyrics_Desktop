@@ -43,6 +43,15 @@ function nextText(lines, after) {
   return null;
 }
 
+/** Why lyrics are missing (the app says whose problem it is) and what
+ * happens next. */
+function errorText(state) {
+  const reason = state.error ?? "Couldn't get lyrics from LRCLIB";
+  return state.retrying
+    ? `${reason}. Trying again automatically`
+    : `${reason}. Use “Look up lyrics again” in the tray menu to retry`;
+}
+
 const STATUS_TEXT = {
   loading: "Looking up lyrics…",
   missing: "No lyrics found for this song",
@@ -72,12 +81,7 @@ export function computeView(state, playback, nowMs) {
 
   const id = `${track.title}\u0000${track.artist}`;
   if (state.lookup !== "synced") {
-    const status =
-      state.lookup === "error"
-        ? state.retrying
-          ? "Couldn't reach LRCLIB, retrying…"
-          : "Couldn't reach LRCLIB. Use the tray menu to try again"
-        : STATUS_TEXT[state.lookup] ?? "";
+    const status = state.lookup === "error" ? errorText(state) : STATUS_TEXT[state.lookup] ?? "";
     return {
       key: `info:${id}`,
       primary: { text: track.title, fill: null, muted: false },

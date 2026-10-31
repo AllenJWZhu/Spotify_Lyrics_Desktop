@@ -207,11 +207,11 @@ impl<P: LyricsProvider> LyricsProvider for CachedProvider<P> {
         match self.cache.get(track, now_unix_s()) {
             Ok(Some(answer)) => return Ok(answer),
             Ok(None) => {}
-            Err(e) => eprintln!("{e}; asking the provider"),
+            Err(e) => log::warn!("{e}; asking the provider"),
         }
         let answer = self.inner.fetch(track)?;
         if let Err(e) = self.cache.put(track, &answer, now_unix_s()) {
-            eprintln!("{e}; not cached");
+            log::warn!("{e}; not cached");
         }
         Ok(answer)
     }
