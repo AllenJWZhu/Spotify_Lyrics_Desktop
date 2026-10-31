@@ -5,15 +5,17 @@
 //! between reports we extrapolate locally. See
 //! [`PlayerSnapshot::estimated_position_ms`].
 
+mod settle;
 mod time;
 
 #[cfg(windows)]
 pub mod smtc;
 
+pub use settle::{SettleEvent, TrackSettler};
 pub use time::{now_unix_ms, winrt_datetime_to_unix_ms, winrt_timespan_to_ms};
 
 /// Identity and length of the track the player is on.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TrackInfo {
     pub title: String,
     pub artist: String,
