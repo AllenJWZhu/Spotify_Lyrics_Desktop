@@ -119,6 +119,10 @@ fn main() {
     let demo = cfg!(not(windows)) || std::env::args().any(|a| a == "--demo");
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .manage(worker::Shared::default())
         .invoke_handler(tauri::generate_handler![
             get_state,

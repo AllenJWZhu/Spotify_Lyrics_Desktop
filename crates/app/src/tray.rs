@@ -8,6 +8,12 @@ use tauri::{App, Manager};
 use crate::controller::{Controller, TrayItems};
 use crate::settings::Settings;
 
+const AUTOSTART_LABEL: &str = if cfg!(windows) {
+    "Start with Windows"
+} else {
+    "Start at login"
+};
+
 pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
     let visible = CheckMenuItem::with_id(
         app,
@@ -25,6 +31,14 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
         settings.locked,
         Some("Ctrl+Alt+L"),
     )?;
+    let autostart = CheckMenuItem::with_id(
+        app,
+        "autostart",
+        AUTOSTART_LABEL,
+        true,
+        app.state::<Controller>().autostart_enabled(),
+        None::<&str>,
+    )?;
     let refresh = MenuItem::with_id(app, "refresh", "Look up lyrics again", true, None::<&str>)?;
     let logs = MenuItem::with_id(app, "logs", "Open log folder", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -35,6 +49,8 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
             &locked,
             &PredefinedMenuItem::separator(app)?,
             &refresh,
+            &PredefinedMenuItem::separator(app)?,
+            &autostart,
             &logs,
             &PredefinedMenuItem::separator(app)?,
             &quit,
@@ -51,6 +67,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
                 "locked" => controller.toggle_locked(),
                 "refresh" => controller.refresh_lyrics(),
                 "logs" => controller.open_log_folder(),
+                "autostart" => controller.toggle_autostart(),
                 "quit" => crate::quit(app),
                 _ => {}
             }
@@ -60,5 +77,9 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
     }
     builder.build(app)?;
 
-    Ok(TrayItems { visible, locked })
+    Ok(TrayItems {
+        visible,
+        locked,
+        autostart,
+    })
 }

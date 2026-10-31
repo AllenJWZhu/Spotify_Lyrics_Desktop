@@ -23,11 +23,12 @@ pub const WINDOW_LABEL: &str = "overlay";
 pub const SETTINGS_EVENT: &str = "overlay-settings";
 pub const POINTER_EVENT: &str = "overlay-pointer";
 
-/// Tray menu entries whose check marks mirror settings.
+/// Tray menu entries whose check marks mirror state.
 #[derive(Clone)]
 pub struct TrayItems {
     pub visible: CheckMenuItem<Wry>,
     pub locked: CheckMenuItem<Wry>,
+    pub autostart: CheckMenuItem<Wry>,
 }
 
 #[derive(Clone, Serialize)]
@@ -184,6 +185,32 @@ impl Controller {
     /// Looks up the current track's lyrics again, bypassing the cache.
     pub fn refresh_lyrics(&self) {
         self.send_worker(WorkerCommand::Refresh);
+    }
+
+    /// Whether the app is registered to start at login. The OS registration
+    /// (on Windows, the Run registry key) is the source of truth.
+    pub fn autostart_enabled(&self) -> bool {
+        use tauri_plugin_autostart::ManagerExt;
+        self.app.autolaunch().is_enabled().unwrap_or(false)
+    }
+
+    pub fn toggle_autostart(&self) {
+        use tauri_plugin_autostart::ManagerExt;
+        let launcher = self.app.autolaunch();
+        let result = if self.autostart_enabled() {
+            launcher.disable()
+        } else {
+            launcher.enable()
+        };
+        if let Err(e) = result {
+            log::warn!("could not change start-at-login: {e}");
+        }
+        let enabled = self.autostart_enabled();
+        log::info!("start at login: {enabled}");
+        let items = lock(&self.tray).clone();
+        if let Some(items) = items {
+            let _ = items.autostart.set_checked(enabled);
+        }
     }
 
     /// Opens the folder holding overlay.log in the file manager.
