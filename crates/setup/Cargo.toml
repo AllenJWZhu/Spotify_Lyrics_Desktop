@@ -1,0 +1,20 @@
+[package]
+name = "lyrics-overlay-setup"
+description = "The Lyrics Overlay installer's window; runs the NSIS installer silently"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = ["custom-protocol"] }
+
+[target.'cfg(windows)'.dependencies]
+dirs = "6"
+winreg = "0.56"

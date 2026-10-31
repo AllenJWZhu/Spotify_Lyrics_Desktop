@@ -2062,6 +2062,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyrics-overlay-setup"
+version = "0.1.2"
+dependencies = [
+ "dirs 6.0.0",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "winreg 0.56.0",
+]
+
+[[package]]
 name = "markup5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

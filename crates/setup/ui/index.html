@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lyrics Overlay Setup</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="setup.js"></script>
+  </head>
+  <body>
+    <header class="titlebar" data-tauri-drag-region>
+      <img class="mark" src="icon.png" alt="" data-tauri-drag-region />
+      <span class="name" data-tauri-drag-region>Lyrics Overlay</span>
+      <button class="close" id="close" type="button" aria-label="Close">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8" /></svg>
+      </button>
+    </header>
+
+    <main>
+      <h1 class="line" id="headline">
+        <span class="unsung" id="headline-text"></span>
+        <span class="glow" aria-hidden="true"><span class="sung" id="headline-sung"></span></span>
+      </h1>
+      <p class="next" id="message"></p>
+
+      <div class="actions" id="actions">
+        <button class="primary" id="primary" type="button"></button>
+        <button class="quiet" id="secondary" type="button" hidden></button>
+        <button class="quiet disclosure" id="options-toggle" type="button" aria-expanded="false" aria-controls="options">
+          <span id="options-label"></span>
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" /></svg>
+        </button>
+      </div>
+
+      <fieldset class="options" id="options" hidden>
+        <label class="switch">
+          <input type="checkbox" id="desktop-shortcut" />
+          <span class="track" aria-hidden="true"></span>
+          <span id="desktop-shortcut-label"></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="start-with-windows" />
+          <span class="track" aria-hidden="true"></span>
+          <span id="start-with-windows-label"></span>
+        </label>
+      </fieldset>
+    </main>
+
+    <footer id="footer"></footer>
+  </body>
+</html>

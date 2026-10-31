@@ -13,14 +13,19 @@ A transparent, always-on-top window shows the current line with a karaoke fill a
 Requires Windows 10 or 11 and the [Spotify desktop app](https://www.spotify.com/download/) (the Microsoft Store version is recognised too). A free Spotify account is fine.
 
 1. Download **`LyricsOverlay-<version>-setup.exe`** from the [latest release](https://github.com/AllenJWZhu/Spotify_Lyrics_Desktop/releases/latest).
-2. Run it. The installer isn't code-signed yet, so Windows SmartScreen shows **"Windows protected your PC"**: click **More info → Run anyway**. It installs for your user only and needs no administrator rights.
-3. It shows itself above the taskbar for a few seconds, then waits out of sight. Play something in Spotify and the lyrics appear.
+2. Run it. It isn't code-signed yet, so Windows SmartScreen shows **"Windows protected your PC"** first: click **More info → Run anyway**.
+3. Click **Install**. **Options** has a desktop shortcut (on) and Start with Windows (off). It installs for your account only and needs no administrator rights.
+4. Click **Open Lyrics Overlay**. It shows itself above the taskbar for a few seconds, then waits out of sight; play something in Spotify and the lyrics appear.
+
+![The setup window: "Lyrics, floating on your desktop" with an Install button](docs/screenshot-setup.png)
+
+**`LyricsOverlay-<version>-classic-setup.exe`** is the same installer with the standard Windows wizard, for when the setup window can't open (it also runs automatically in that case, on PCs without the WebView2 runtime). In-app updates use it, silently.
 
 Prefer not to install? **`LyricsOverlay-<version>-portable.zip`** contains a single `LyricsOverlay.exe`; unzip and run it. It needs the Microsoft Edge WebView2 runtime, which Windows 11 and up-to-date Windows 10 already have (the installer adds it if missing).
 
 Each release lists SHA-256 checksums in `SHA256SUMS.txt`. To check a download in PowerShell: `Get-FileHash .\LyricsOverlay-0.1.0-setup.exe`.
 
-**Updates** come to you: the overlay checks for a new version when it starts and every few hours, and asks before installing it (one click, then it restarts by itself). **Check for updates** in the tray checks right away. Updates are signed, so the overlay only installs ones built by this project. (0.1.0 predates this; install 0.1.1 or later by hand once.) The portable version is offered updates too; accepting one installs the regular version.
+**Updates** come to you: the overlay checks for a new version when it starts and every few hours, and asks before installing it (one click; it installs in the background and the overlay restarts by itself). **Check for updates** in the tray checks right away. Updates are signed, so the overlay only installs ones built by this project. (0.1.0 predates this; install 0.1.1 or later by hand once.) The portable version is offered updates too; accepting one installs the regular version.
 
 To uninstall, use **Settings → Apps → Installed apps → Lyrics Overlay**. It also removes the start-with-Windows entry; tick **Delete the application data** to remove settings and cached lyrics too. For the portable version, turn off **Start with Windows** in the tray before deleting the exe.
 
@@ -111,7 +116,9 @@ crates/core
   follow.rs  Follower: current track, lyrics lookup with retries, current line
 crates/cli   command-line front end
 crates/app   overlay window (Tauri): settings, controller (lock, tray, shortcuts), worker; ui/ is plain HTML/CSS/JS, no build step;
-             installer/ has the installer artwork (make_art.py redraws it) and an NSIS hook
+             installer/ has the NSIS installer's artwork (make_art.py redraws it) and an NSIS hook
+crates/setup the setup window people download (Tauri): runs the embedded NSIS installer silently.
+             Built without LYRICS_SETUP_PAYLOAD it simulates the install, for working on the window
 ```
 
 ## Development

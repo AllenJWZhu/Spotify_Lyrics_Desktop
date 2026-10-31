@@ -75,7 +75,7 @@
         "https://github.com/AllenJWZhu/Spotify_Lyrics_Desktop/releases/latest/download/latest.json"
       ],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     }
   }

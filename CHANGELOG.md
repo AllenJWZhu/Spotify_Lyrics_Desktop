@@ -3,8 +3,9 @@
 ## [0.1.2] - Unreleased
 
 **Installer**
-- The installer and uninstaller carry the app's icon instead of the generic NSIS one.
-- New artwork on the installer's pages, in the app's colours.
+- A new setup window in the app's own style replaces the Windows wizard: one **Install** button, with a desktop shortcut and Start with Windows under **Options**, then **Open Lyrics Overlay**. In English or Chinese, following Windows.
+- The classic wizard is still published (`-classic-setup.exe`), now with the app's icon and artwork; it opens by itself on PCs without the WebView2 runtime.
+- Updates install silently in the background (from 0.1.2 on); before, a progress window showed.
 
 ## [0.1.1] - 2026-10-31
 
