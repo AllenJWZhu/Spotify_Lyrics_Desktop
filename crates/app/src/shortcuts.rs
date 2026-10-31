@@ -27,12 +27,12 @@ pub fn install(app: &AppHandle) {
         })
         .build();
     if let Err(e) = app.plugin(plugin) {
-        eprintln!("global shortcuts unavailable: {e}");
+        log::warn!("global shortcuts unavailable: {e}");
         return;
     }
     for shortcut in [lock, show] {
         if let Err(e) = app.global_shortcut().register(shortcut) {
-            eprintln!("could not register shortcut {shortcut:?}: {e}");
+            log::warn!("could not register shortcut {shortcut:?}: {e}");
         }
     }
 }

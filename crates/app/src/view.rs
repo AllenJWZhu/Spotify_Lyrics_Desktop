@@ -43,7 +43,8 @@ pub enum Lookup {
     Instrumental,
     /// No lyrics found.
     Missing,
-    /// Lookup failed; `retrying` says whether another attempt is scheduled.
+    /// Lookup failed: `error` says why, `retrying` whether another attempt
+    /// is scheduled.
     Error,
 }
 
@@ -53,6 +54,8 @@ pub struct OverlayState {
     pub track: Option<TrackView>,
     pub lookup: Lookup,
     pub retrying: bool,
+    /// Why the lookup failed, for the user.
+    pub error: Option<String>,
     /// Synced lines; empty unless `lookup` is `synced`.
     pub lines: Vec<LineView>,
     /// Where the lyrics came from, for attribution.
@@ -67,6 +70,7 @@ impl Default for OverlayState {
             track: None,
             lookup: Lookup::Idle,
             retrying: false,
+            error: None,
             lines: Vec::new(),
             source: None,
             message: None,
@@ -87,9 +91,12 @@ impl OverlayState {
         match follower.state() {
             LookupState::Idle => {}
             LookupState::Loading { .. } => state.lookup = Lookup::Loading,
-            LookupState::Failed { retry_at_ms, .. } => {
+            LookupState::Failed {
+                retry_at_ms, error, ..
+            } => {
                 state.lookup = Lookup::Error;
                 state.retrying = retry_at_ms.is_some();
+                state.error = Some(error.clone());
             }
             LookupState::Ready(None) => state.lookup = Lookup::Missing,
             LookupState::Ready(Some(found)) => {
@@ -188,6 +195,7 @@ impl PlaybackThrottle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lyrics_core::follow::FetchError;
     use lyrics_core::lyrics::{FoundLyrics, SyncedLyrics};
     use lyrics_core::player::TrackInfo;
 
@@ -209,7 +217,7 @@ mod tests {
         }
     }
 
-    fn settled(result: Result<Option<FoundLyrics>, String>) -> Follower {
+    fn settled(result: Result<Option<FoundLyrics>, FetchError>) -> Follower {
         let mut f = Follower::new(1_000, 0);
         let s = snapshot(PlaybackStatus::Playing, 0, 0);
         f.tick(Some(&s), 0);
@@ -221,7 +229,7 @@ mod tests {
     fn found(lyrics: Lyrics) -> Option<FoundLyrics> {
         Some(FoundLyrics {
             lyrics,
-            source: "LRCLIB",
+            source: "LRCLIB".into(),
             matched_title: "Song".into(),
             matched_artist: "Artist".into(),
             matched_duration_ms: None,
@@ -252,12 +260,20 @@ mod tests {
             (Ok(None), Lookup::Missing, false),
             (Ok(found(Lyrics::Plain("x".into()))), Lookup::Plain, false),
             (Ok(found(Lyrics::Instrumental)), Lookup::Instrumental, false),
-            (Err("503".into()), Lookup::Error, true),
+            (
+                Err(FetchError {
+                    message: "LRCLIB is having problems right now (HTTP 502)".into(),
+                    retryable: true,
+                }),
+                Lookup::Error,
+                true,
+            ),
         ];
         for (result, lookup, retrying) in cases {
             let state = OverlayState::from_follower(&settled(result));
             assert_eq!(state.lookup, lookup);
             assert_eq!(state.retrying, retrying);
+            assert_eq!(state.error.is_some(), lookup == Lookup::Error);
             assert!(state.lines.is_empty());
         }
         assert_eq!(

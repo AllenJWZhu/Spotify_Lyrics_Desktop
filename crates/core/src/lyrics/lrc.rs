@@ -74,6 +74,23 @@ impl SyncedLyrics {
         &self.lines
     }
 
+    /// Writes the lines back as LRC with millisecond timestamps. Parsing the
+    /// result gives back equal lyrics (offsets are already applied).
+    pub fn to_lrc(&self) -> String {
+        let mut out = String::new();
+        for line in &self.lines {
+            let ms = line.start_ms;
+            out.push_str(&format!(
+                "[{:02}:{:02}.{:03}]{}\n",
+                ms / 60_000,
+                ms / 1000 % 60,
+                ms % 1000,
+                line.text
+            ));
+        }
+        out
+    }
+
     /// True when there is no line with actual text.
     pub fn is_empty(&self) -> bool {
         self.lines.iter().all(|l| l.text.is_empty())
@@ -241,6 +258,15 @@ mod tests {
     #[test]
     fn blank_only_lyrics_count_as_empty() {
         assert!(SyncedLyrics::parse("[00:01.00]\n[00:02.00] ").is_empty());
+    }
+
+    #[test]
+    fn to_lrc_round_trips() {
+        let lrc = "[offset:+100]\n[00:01.23]one\n[00:01.23]one (tr)\n[00:05.00]\n[61:02.005]late";
+        let parsed = SyncedLyrics::parse(lrc);
+        let written = parsed.to_lrc();
+        assert!(written.starts_with("[00:01.130]one\n"));
+        assert_eq!(SyncedLyrics::parse(&written), parsed);
     }
 
     #[test]

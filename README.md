@@ -2,7 +2,7 @@
 
 Floating, always-on-top desktop lyrics for the Spotify desktop app on Windows, in the style of NetEase Cloud Music's desktop lyrics.
 
-> **Status: M3.** A transparent, always-on-top window shows the current line with a karaoke fill and the next line (or translation) below it. It can be locked so clicks pass through, and is controlled from a hover toolbar, the tray icon or global shortcuts.
+> **Status: M4.** A transparent, always-on-top window shows the current line with a karaoke fill and the next line (or translation) below it. It can be locked so clicks pass through, and is controlled from a hover toolbar, the tray icon or global shortcuts.
 
 ## How it works
 
@@ -11,6 +11,7 @@ Floating, always-on-top desktop lyrics for the Spotify desktop app on Windows, i
 - **Track changes.** Spotify updates a track's duration 200–800 ms before its title and artist. The app waits until all three have stopped changing for 1 s before looking up lyrics, so it never searches for "old title + new duration".
 - **Overlay.** A [Tauri](https://tauri.app) window (WebView2 on Windows). The backend sends the lyrics once per track plus a position anchor on line changes, play/pause and seeks; the page animates the fill every frame from that anchor, so it stays smooth without a stream of updates.
 - **Lyrics** are fetched at runtime from [LRCLIB](https://lrclib.net), an open database of time-synced lyrics: exact match first (with and without the album, then with cleaned-up title and main artist), then a search filtered to ±2 s of the track length. Lyrics are never bundled with or stored in this repository.
+- **Cache.** Lyrics you've seen are kept in a local SQLite file, so replays show instantly and work offline. "No lyrics found" is re-checked after 3 days. If a song matched the wrong version, use **Look up lyrics again** in the tray menu.
 
 ## Roadmap
 
@@ -18,8 +19,9 @@ Floating, always-on-top desktop lyrics for the Spotify desktop app on Windows, i
 - [x] **M1** Fetch and parse synced lyrics, print the current line in the terminal
 - [x] **M2** Transparent always-on-top overlay window (Tauri)
 - [x] **M3** Lock / click-through mode, drag to move, tray icon, settings
-- [ ] **M4** Translation line, per-track offset, extra lyrics providers, persistent cache, word-level timing
+- [x] **M4** Local lyrics cache, visual refresh
 - [ ] **M5** Packaged releases
+- [ ] Later: per-track timing offset, word-by-word timing
 
 ## Running the overlay
 
@@ -35,11 +37,11 @@ The window appears above the taskbar. Drag it anywhere to move it.
 | --- | --- |
 | **Hover** | toolbar: previous / play-pause / next, text size A− A+, colour, lyric timing − 0.0s + (click the value to reset), lock, quit |
 | **Lock** | clicks pass through to whatever is underneath. Hover the lyrics and an unlock button appears at the top |
-| **Tray icon** | show/hide, lock/unlock, quit |
+| **Tray icon** | show/hide, lock/unlock, look up lyrics again, quit |
 | `Ctrl+Alt+L` | lock / unlock |
 | `Ctrl+Alt+D` | show / hide |
 
-Position, size, colour, timing offset and lock state are remembered in `%APPDATA%\io.github.allenjwzhu.lyrics-overlay\settings.json`.
+Position, size, colour, timing offset and lock state are remembered in `%APPDATA%\io.github.allenjwzhu.lyrics-overlay\settings.json`; cached lyrics live in `%LOCALAPPDATA%\io.github.allenjwzhu.lyrics-overlay\lyrics.sqlite3` (safe to delete).
 
 To try it without Spotify (or on macOS/Linux, where this is the only mode), run the built-in demo track:
 
@@ -89,7 +91,7 @@ Options: `--interval-ms` (default 200), `--csv` (output path), `--seek-threshold
 ```
 crates/core
   player/    snapshot model, position estimation, track settling, SMTC source (Windows only)
-  lyrics/    LRC parser, title/artist cleanup, LRCLIB client
+  lyrics/    LRC parser, title/artist cleanup, LRCLIB client, SQLite cache
   follow.rs  Follower: current track, lyrics lookup with retries, current line
 crates/cli   command-line front end
 crates/app   overlay window (Tauri): settings, controller (lock, tray, shortcuts), worker; ui/ is plain HTML/CSS/JS, no build step
@@ -116,4 +118,4 @@ cargo test -p lyrics-core --test lrclib_live -- --ignored --nocapture
 
 ## License
 
-[MIT](LICENSE). Lyrics are provided by [LRCLIB](https://lrclib.net) at runtime. This project is not affiliated with or endorsed by Spotify.
+[MIT](LICENSE). The bundled [Instrument Sans](https://github.com/Instrument/instrument-sans) font is under the SIL Open Font License (`crates/app/ui/fonts/OFL.txt`). Lyrics are provided by [LRCLIB](https://lrclib.net) at runtime. This project is not affiliated with or endorsed by Spotify.

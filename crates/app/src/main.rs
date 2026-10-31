@@ -9,6 +9,7 @@
 mod controller;
 mod demo;
 mod geometry;
+mod logging;
 mod settings;
 mod shortcuts;
 mod tray;
@@ -131,6 +132,14 @@ fn main() {
             quit_app,
         ])
         .setup(move |app| {
+            if let Ok(dir) = app.path().app_log_dir() {
+                logging::init(&dir);
+            }
+            log::info!(
+                "Lyrics Overlay {} starting{}",
+                env!("CARGO_PKG_VERSION"),
+                if demo { " in demo mode" } else { "" }
+            );
             let path = app.path().app_config_dir()?.join("settings.json");
             let settings = Settings::load(&path);
             app.manage(Controller::new(
@@ -153,13 +162,18 @@ fn main() {
 
             match tray::build(app, &settings) {
                 Ok(items) => controller.attach_tray(items),
-                Err(e) => eprintln!("tray icon unavailable: {e}"),
+                Err(e) => log::warn!("tray icon unavailable: {e}"),
             }
             shortcuts::install(app.handle());
 
             let (tx, rx) = mpsc::channel();
             controller.attach_worker(tx);
-            worker::spawn(app.handle().clone(), demo, settings.offset_ms, rx)?;
+            let cache = app
+                .path()
+                .app_cache_dir()
+                .ok()
+                .map(|d| d.join("lyrics.sqlite3"));
+            worker::spawn(app.handle().clone(), demo, cache, settings.offset_ms, rx)?;
             spawn_housekeeping(app.handle().clone())?;
             Ok(())
         })

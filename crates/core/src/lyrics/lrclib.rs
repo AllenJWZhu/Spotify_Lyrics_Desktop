@@ -9,6 +9,7 @@
 //!   necessarily one with synced lyrics, so a plain-only hit is followed by a
 //!   `/api/search` for a synced alternative.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -72,7 +73,7 @@ impl Record {
     fn into_found(self, lyrics: Lyrics) -> FoundLyrics {
         FoundLyrics {
             lyrics,
-            source: "LRCLIB",
+            source: "LRCLIB".into(),
             matched_duration_ms: self.duration_ms(),
             matched_title: self.track_name.unwrap_or_default(),
             matched_artist: self.artist_name.unwrap_or_default(),
@@ -112,16 +113,57 @@ fn is_transient(e: &ureq::Error) -> bool {
     )
 }
 
+/// Errors that mean the proxy itself couldn't be used, so a direct
+/// connection might work: proxy down, refusing, or never answering.
+fn proxy_unusable(e: &ureq::Error) -> bool {
+    matches!(
+        e,
+        ureq::Error::ConnectProxyFailed(_)
+            | ureq::Error::ConnectionFailed
+            | ureq::Error::HostNotFound
+            | ureq::Error::Io(_)
+            | ureq::Error::Timeout(_)
+    )
+}
+
 /// Real HTTP transport.
+///
+/// Uses the proxy from the environment or Windows settings, if any. A system
+/// proxy left enabled after its app was closed would otherwise break every
+/// lookup, so when the proxy can't be used the request is retried directly,
+/// and later requests go direct first.
 pub struct HttpTransport {
-    agent: ureq::Agent,
+    proxied: Option<ureq::Agent>,
+    direct: ureq::Agent,
+    prefer_direct: AtomicBool,
     base_url: String,
     retry_delays: Vec<Duration>,
 }
 
 impl HttpTransport {
+    /// LRCLIB with the system proxy settings.
     pub fn new(user_agent: &str) -> Self {
-        Self::with_base_url(user_agent, DEFAULT_BASE_URL)
+        let proxy = ureq::Proxy::try_from_env();
+        match &proxy {
+            Some(p) => log::info!("LRCLIB via proxy {} (direct if it fails)", p.uri()),
+            None => log::info!("LRCLIB via a direct connection (no proxy configured)"),
+        }
+        Self::with_proxy(user_agent, DEFAULT_BASE_URL, proxy)
+    }
+
+    /// A custom base URL, no proxy (for tests and self-hosted mirrors).
+    pub fn with_base_url(user_agent: &str, base_url: &str) -> Self {
+        Self::with_proxy(user_agent, base_url, None)
+    }
+
+    pub fn with_proxy(user_agent: &str, base_url: &str, proxy: Option<ureq::Proxy>) -> Self {
+        Self {
+            proxied: proxy.map(|p| agent(user_agent, Some(p))),
+            direct: agent(user_agent, None),
+            prefer_direct: AtomicBool::new(false),
+            base_url: base_url.trim_end_matches('/').to_string(),
+            retry_delays: DEFAULT_RETRY_DELAYS.to_vec(),
+        }
     }
 
     /// Overrides the waits between retries; an empty list disables retries.
@@ -130,14 +172,15 @@ impl HttpTransport {
         self
     }
 
-    /// Runs `attempt`, retrying transient failures after each delay in turn.
-    fn with_retries<T>(
+    /// Runs `request` through the proxy (falling back to direct) or
+    /// directly, retrying transient failures after each delay in turn.
+    fn send<T>(
         &self,
-        mut attempt: impl FnMut() -> Result<T, ureq::Error>,
+        request: impl Fn(&ureq::Agent) -> Result<T, ureq::Error>,
     ) -> Result<T, ureq::Error> {
         let mut delays = self.retry_delays.iter();
         loop {
-            match attempt() {
+            match self.send_once(&request) {
                 Err(e) if is_transient(&e) => match delays.next() {
                     Some(delay) => std::thread::sleep(*delay),
                     None => return Err(e),
@@ -147,31 +190,48 @@ impl HttpTransport {
         }
     }
 
-    pub fn with_base_url(user_agent: &str, base_url: &str) -> Self {
-        let tls = ureq::tls::TlsConfig::builder()
-            // OS trust store: keeps working behind antivirus or corporate
-            // TLS inspection, which bundled roots would reject.
-            .root_certs(ureq::tls::RootCerts::PlatformVerifier)
-            .build();
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .user_agent(user_agent)
-            .timeout_global(Some(Duration::from_secs(10)))
-            .tls_config(tls)
-            .build()
-            .into();
-        Self {
-            agent,
-            base_url: base_url.trim_end_matches('/').to_string(),
-            retry_delays: DEFAULT_RETRY_DELAYS.to_vec(),
+    fn send_once<T>(
+        &self,
+        request: &impl Fn(&ureq::Agent) -> Result<T, ureq::Error>,
+    ) -> Result<T, ureq::Error> {
+        let proxied = match &self.proxied {
+            Some(agent) if !self.prefer_direct.load(Ordering::Relaxed) => agent,
+            _ => return request(&self.direct),
+        };
+        match request(proxied) {
+            Err(e) if proxy_unusable(&e) => {
+                log::warn!("proxy failed ({e}); trying a direct connection");
+                let direct = request(&self.direct);
+                if direct.is_ok() {
+                    log::info!("direct connection works; skipping the proxy from now on");
+                    self.prefer_direct.store(true, Ordering::Relaxed);
+                }
+                direct
+            }
+            result => result,
         }
     }
 }
 
+fn agent(user_agent: &str, proxy: Option<ureq::Proxy>) -> ureq::Agent {
+    let tls = ureq::tls::TlsConfig::builder()
+        // OS trust store: keeps working behind antivirus or corporate TLS
+        // inspection, which bundled roots would reject.
+        .root_certs(ureq::tls::RootCerts::PlatformVerifier)
+        .build();
+    ureq::Agent::config_builder()
+        .user_agent(user_agent)
+        .timeout_global(Some(Duration::from_secs(10)))
+        .tls_config(tls)
+        .proxy(proxy)
+        .build()
+        .into()
+}
+
 impl Transport for HttpTransport {
     fn get(&self, query: &GetQuery) -> Result<Option<Record>, LyricsError> {
-        let result = self.with_retries(|| {
-            let mut request = self
-                .agent
+        let result = self.send(|agent| {
+            let mut request = agent
                 .get(format!("{}/api/get", self.base_url))
                 .query("track_name", &query.track_name)
                 .query("artist_name", &query.artist_name);
@@ -191,8 +251,8 @@ impl Transport for HttpTransport {
     }
 
     fn search(&self, track_name: &str, artist_name: &str) -> Result<Vec<Record>, LyricsError> {
-        let records = self.with_retries(|| {
-            self.agent
+        let records = self.send(|agent| {
+            agent
                 .get(format!("{}/api/search", self.base_url))
                 .query("track_name", track_name)
                 .query("artist_name", artist_name)

@@ -43,7 +43,7 @@ test("lineAt and groupBounds", () => {
 });
 
 test("no track shows the waiting message or the backend's message", () => {
-  assert.equal(computeView(null, null, 0).primary.text, "Waiting for Spotify…");
+  assert.equal(computeView(null, null, 0).primary.text, "Play something in Spotify");
   const v = computeView({ track: null, message: "Can't reach media controls" }, null, 0);
   assert.equal(v.primary.text, "Can't reach media controls");
   assert.equal(v.primary.muted, true);
@@ -52,24 +52,31 @@ test("no track shows the waiting message or the backend's message", () => {
 test("non-synced lookups show the track and a status", () => {
   const cases = [
     [{ lookup: "loading" }, "Looking up lyrics…"],
-    [{ lookup: "missing" }, "No lyrics found"],
-    [{ lookup: "plain" }, "Only unsynced lyrics available"],
+    [{ lookup: "missing" }, "No lyrics found for this song"],
+    [{ lookup: "plain" }, "Only unsynced lyrics exist for this song"],
     [{ lookup: "instrumental" }, "Instrumental"],
-    [{ lookup: "error", retrying: true }, "Lyrics lookup failed, retrying…"],
-    [{ lookup: "error", retrying: false }, "Lyrics lookup failed"],
+    [
+      { lookup: "error", retrying: true, error: "LRCLIB is having problems right now (HTTP 502)" },
+      "LRCLIB is having problems right now (HTTP 502). Trying again automatically",
+    ],
+    [
+      { lookup: "error", retrying: false, error: null },
+      "Couldn't get lyrics from LRCLIB. Use “Look up lyrics again” in the tray menu to retry",
+    ],
   ];
   for (const [extra, text] of cases) {
     const v = computeView({ ...synced, lines: [], ...extra }, null, 0);
-    assert.equal(v.primary.text, "Song — Artist");
+    assert.equal(v.primary.text, "Song");
     assert.equal(v.primary.fill, null);
     assert.equal(v.secondary.text, text);
   }
 });
 
-test("before the first line: title, with the first line coming up", () => {
+test("before the first line: title over artist", () => {
   const v = computeView(synced, playing(200, 0, null), 300);
-  assert.equal(v.primary.text, "Song — Artist");
-  assert.equal(v.secondary.text, "line one");
+  assert.equal(v.primary.text, "Song");
+  assert.equal(v.primary.fill, null);
+  assert.equal(v.secondary.text, "Artist");
 });
 
 test("karaoke fill follows the extrapolated position", () => {

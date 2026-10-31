@@ -6,7 +6,9 @@ import { computeView, formatOffset } from "./view.js";
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-/** Smallest font scale before long lines are cut with an ellipsis. */
+/** Narrowest width (font-stretch %) a long line is condensed to... */
+const MIN_STRETCH = 80;
+/** ...then the smallest font scale before it is cut with an ellipsis. */
 const MIN_FIT = 0.55;
 
 let state = null;
@@ -32,11 +34,20 @@ function setLine(el, text, muted) {
   el.classList.toggle("muted", muted);
 }
 
-/** Shrinks the font until the line fits the window, down to MIN_FIT. */
+/** Fits a long line to the window: first narrows the letterforms (the
+ * typeface's width axis keeps text large and readable), then shrinks it. */
 function fitWidth(el) {
+  const base = el.querySelector(".base");
+  el.style.setProperty("--stretch", "100%");
   el.style.setProperty("--scale", "1");
-  const available = el.parentElement.clientWidth - 64;
-  const needed = el.querySelector(".base").scrollWidth;
+  const available = el.parentElement.clientWidth - 48;
+  let needed = base.scrollWidth;
+  if (needed <= available) return;
+
+  const stretch = Math.max(MIN_STRETCH, Math.floor((100 * available) / needed));
+  el.style.setProperty("--stretch", `${stretch}%`);
+  // Scripts without a width axis (CJK, Hangul) don't narrow; measure again.
+  needed = base.scrollWidth;
   if (needed > available) {
     el.style.setProperty("--scale", String(Math.max(MIN_FIT, available / needed)));
   }

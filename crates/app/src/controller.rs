@@ -95,7 +95,7 @@ impl Controller {
             s.clone()
         };
         if let Err(e) = settings.save(&self.path) {
-            eprintln!("could not save settings to {}: {e}", self.path.display());
+            log::warn!("could not save settings to {}: {e}", self.path.display());
         }
         let _ = self.app.emit(SETTINGS_EVENT, settings.clone());
         settings
@@ -157,7 +157,7 @@ impl Controller {
         if after != before {
             if let Some(window) = self.window() {
                 if let Err(e) = resize_for_font(&window, before, after) {
-                    eprintln!("could not resize the window: {e}");
+                    log::warn!("could not resize the window: {e}");
                 }
             }
         }
@@ -181,6 +181,29 @@ impl Controller {
         self.send_worker(WorkerCommand::Control(action));
     }
 
+    /// Looks up the current track's lyrics again, bypassing the cache.
+    pub fn refresh_lyrics(&self) {
+        self.send_worker(WorkerCommand::Refresh);
+    }
+
+    /// Opens the folder holding overlay.log in the file manager.
+    pub fn open_log_folder(&self) {
+        let Ok(dir) = self.app.path().app_log_dir() else {
+            return;
+        };
+        let _ = std::fs::create_dir_all(&dir);
+        let opener = if cfg!(windows) {
+            "explorer"
+        } else if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        };
+        if let Err(e) = std::process::Command::new(opener).arg(&dir).spawn() {
+            log::warn!("could not open {}: {e}", dir.display());
+        }
+    }
+
     pub fn set_hotspot(&self, rect: Option<CssRect>) {
         *lock(&self.hotspot) = rect;
     }
@@ -196,7 +219,7 @@ impl Controller {
     pub fn flush(&self) {
         if self.position_dirty.swap(false, Ordering::SeqCst) {
             if let Err(e) = self.settings().save(&self.path) {
-                eprintln!("could not save settings: {e}");
+                log::warn!("could not save settings: {e}");
             }
         }
     }

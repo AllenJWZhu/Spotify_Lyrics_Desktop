@@ -8,7 +8,8 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use lyrics_core::follow::{FollowEvent, Follower};
+use lyrics_core::follow::{FetchError, FollowEvent, Follower};
+use lyrics_core::lyrics::cache::LyricsCache;
 use lyrics_core::lyrics::{FoundLyrics, LyricsProvider};
 use lyrics_core::player::{PlayerAction, PlayerSource, TrackInfo, now_unix_ms};
 
@@ -23,6 +24,15 @@ const SETTLE_MS: i64 = 1_000;
 pub enum WorkerCommand {
     SetOffset(i64),
     Control(PlayerAction),
+    /// Drop the current track's lyrics (and cache entry) and look them up again.
+    Refresh,
+}
+
+/// Where lyrics come from and, if caching, the cache behind them.
+struct Parts {
+    source: Box<dyn PlayerSource>,
+    provider: Arc<dyn LyricsProvider>,
+    cache: Option<Arc<LyricsCache>>,
 }
 
 /// Everything the page needs on (re)load, before events start arriving.
@@ -47,28 +57,46 @@ impl Shared {
     }
 }
 
+/// `cache`: where to keep fetched lyrics; `None` (or a cache that fails to
+/// open) means always fetch. Not used in demo mode.
 pub fn spawn(
     app: AppHandle,
     demo: bool,
+    cache: Option<std::path::PathBuf>,
     offset_ms: i64,
     commands: mpsc::Receiver<WorkerCommand>,
 ) -> std::io::Result<()> {
     thread::Builder::new()
         .name("lyrics-worker".into())
-        .spawn(move || run(app, demo, offset_ms, commands))?;
+        .spawn(move || run(app, demo, cache, offset_ms, commands))?;
     Ok(())
 }
 
-type FetchResult = (TrackInfo, Result<Option<FoundLyrics>, String>);
+type FetchResult = (TrackInfo, Result<Option<FoundLyrics>, FetchError>);
 
-fn run(app: AppHandle, demo: bool, offset_ms: i64, commands: mpsc::Receiver<WorkerCommand>) {
-    let (source, provider) = if demo { demo_parts() } else { real_parts(&app) };
+fn run(
+    app: AppHandle,
+    demo: bool,
+    cache_path: Option<std::path::PathBuf>,
+    offset_ms: i64,
+    commands: mpsc::Receiver<WorkerCommand>,
+) {
+    let Parts {
+        source,
+        provider,
+        cache,
+    } = if demo {
+        demo_parts()
+    } else {
+        real_parts(&app, cache_path.as_deref())
+    };
 
     let mut follower = Follower::new(SETTLE_MS, offset_ms);
     let mut throttle = PlaybackThrottle::default();
     let (tx, rx) = mpsc::channel::<FetchResult>();
 
     loop {
+        let mut events = Vec::new();
         while let Ok(command) = commands.try_recv() {
             match command {
                 WorkerCommand::SetOffset(ms) => {
@@ -78,8 +106,17 @@ fn run(app: AppHandle, demo: bool, offset_ms: i64, commands: mpsc::Receiver<Work
                 }
                 WorkerCommand::Control(action) => {
                     if let Err(e) = source.control(action) {
-                        eprintln!("player control failed: {e}");
+                        log::warn!("player control failed: {e}");
                     }
+                }
+                WorkerCommand::Refresh => {
+                    if let (Some(cache), Some(track)) = (&cache, follower.track()) {
+                        if let Err(e) = cache.remove(track) {
+                            log::warn!("{e}");
+                        }
+                    }
+                    events.extend(follower.refresh());
+                    throttle.reset();
                 }
             }
         }
@@ -89,7 +126,7 @@ fn run(app: AppHandle, demo: bool, offset_ms: i64, commands: mpsc::Receiver<Work
         // looks the same as "not running" to the follower.
         let snapshot = source.snapshot().unwrap_or(None);
 
-        let mut events = follower.tick(snapshot.as_ref(), now);
+        events.extend(follower.tick(snapshot.as_ref(), now));
         while let Ok((track, result)) = rx.try_recv() {
             events.extend(follower.on_fetched(track, result, now));
         }
@@ -138,19 +175,70 @@ fn spawn_fetch(
 ) {
     let provider = Arc::clone(provider);
     thread::spawn(move || {
-        let result = provider.fetch(&track).map_err(|e| e.to_string());
+        let result = provider.fetch(&track);
+        match &result {
+            Ok(Some(found)) => log::info!(
+                "lyrics for {:?} by {:?}: {} from {}",
+                track.title,
+                track.artist,
+                kind_name(&found.lyrics),
+                found.source
+            ),
+            Ok(None) => log::info!("no lyrics for {:?} by {:?}", track.title, track.artist),
+            // The full error (status, proxy, TLS…) goes to the log; the page
+            // gets a sentence about whose problem it is.
+            Err(e) => log::warn!(
+                "lyrics lookup for {:?} by {:?} failed: {e}",
+                track.title,
+                track.artist
+            ),
+        }
+        let result = result.map_err(|e| FetchError::from(&e));
         // The receiver lives as long as the worker, i.e. the app.
         let _ = tx.send((track, result));
     });
 }
 
-fn demo_parts() -> (Box<dyn PlayerSource>, Arc<dyn LyricsProvider>) {
-    (Box::new(DemoSource::new()), Arc::new(DemoProvider))
+fn kind_name(lyrics: &lyrics_core::lyrics::Lyrics) -> &'static str {
+    match lyrics {
+        lyrics_core::lyrics::Lyrics::Synced(_) => "synced",
+        lyrics_core::lyrics::Lyrics::Plain(_) => "plain",
+        lyrics_core::lyrics::Lyrics::Instrumental => "instrumental",
+    }
+}
+
+fn demo_parts() -> Parts {
+    Parts {
+        source: Box::new(DemoSource::new()),
+        provider: Arc::new(DemoProvider),
+        cache: None,
+    }
+}
+
+/// LRCLIB, behind the on-disk cache when it opens.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn lyrics_provider(
+    cache_path: Option<&std::path::Path>,
+) -> (Arc<dyn LyricsProvider>, Option<Arc<LyricsCache>>) {
+    use lyrics_core::lyrics::cache::CachedProvider;
+    use lyrics_core::lyrics::lrclib::Lrclib;
+
+    match cache_path.map(LyricsCache::open) {
+        Some(Ok(cache)) => {
+            let cache = Arc::new(cache);
+            let provider = CachedProvider::new(Lrclib::new(), Arc::clone(&cache));
+            (Arc::new(provider), Some(cache))
+        }
+        Some(Err(e)) => {
+            log::warn!("{e}; lyrics won't be cached");
+            (Arc::new(Lrclib::new()), None)
+        }
+        None => (Arc::new(Lrclib::new()), None),
+    }
 }
 
 #[cfg(windows)]
-fn real_parts(app: &AppHandle) -> (Box<dyn PlayerSource>, Arc<dyn LyricsProvider>) {
-    use lyrics_core::lyrics::lrclib::Lrclib;
+fn real_parts(app: &AppHandle, cache_path: Option<&std::path::Path>) -> Parts {
     use lyrics_core::player::smtc::{SmtcSource, init_worker_thread};
 
     init_worker_thread();
@@ -168,11 +256,16 @@ fn real_parts(app: &AppHandle) -> (Box<dyn PlayerSource>, Arc<dyn LyricsProvider
             }
         }
     };
-    (Box::new(source), Arc::new(Lrclib::new()))
+    let (provider, cache) = lyrics_provider(cache_path);
+    Parts {
+        source: Box::new(source),
+        provider,
+        cache,
+    }
 }
 
 #[cfg(not(windows))]
-fn real_parts(_app: &AppHandle) -> (Box<dyn PlayerSource>, Arc<dyn LyricsProvider>) {
+fn real_parts(_app: &AppHandle, _cache_path: Option<&std::path::Path>) -> Parts {
     // `main` always picks demo mode off Windows.
     demo_parts()
 }
