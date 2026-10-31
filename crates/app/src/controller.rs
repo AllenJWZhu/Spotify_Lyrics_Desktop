@@ -8,6 +8,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, mpsc};
+use std::time::Instant;
 
 use serde::Serialize;
 use tauri::menu::CheckMenuItem;
@@ -16,6 +17,7 @@ use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewW
 use lyrics_core::player::PlayerAction;
 
 use crate::geometry::{self, CssRect, Rect};
+use crate::presence::{PlayerSeen, Presence};
 use crate::settings::{OFFSET_STEP_MS, Settings, WindowPosition};
 use crate::worker::WorkerCommand;
 
@@ -50,6 +52,11 @@ pub struct Controller {
     ignoring_cursor: AtomicBool,
     /// What we last told the page about the pointer (only tracked while locked).
     pointer_inside: AtomicBool,
+    /// Whether Spotify is playing, and any peek; see [`Presence`].
+    presence: Mutex<Presence>,
+    /// Whether the window is on screen, as last applied by
+    /// [`Controller::presence_tick`], the only place that shows or hides it.
+    window_shown: AtomicBool,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -69,6 +76,8 @@ impl Controller {
             hotspot: Mutex::new(None),
             ignoring_cursor: AtomicBool::new(false),
             pointer_inside: AtomicBool::new(false),
+            presence: Mutex::new(Presence::default()),
+            window_shown: AtomicBool::new(false),
         }
     }
 
@@ -136,20 +145,61 @@ impl Controller {
         self.set_locked(!self.settings().locked);
     }
 
-    pub fn set_visible(&self, visible: bool) {
-        let settings = self.update(|s| s.visible = visible);
-        if let Some(window) = self.window() {
-            let _ = if visible {
-                window.show()
+    /// The shortcut and tray item: hides the window if it's on screen,
+    /// otherwise shows it, peeking with "Play something in Spotify" if
+    /// Spotify isn't playing so the key press visibly does something.
+    pub fn toggle_visible(&self) {
+        let show = !self.window_shown.load(Ordering::SeqCst);
+        {
+            let mut presence = lock(&self.presence);
+            if show {
+                presence.peek(Instant::now());
             } else {
-                window.hide()
-            };
+                presence.end_peek();
+            }
         }
+        let settings = self.update(|s| s.visible = show);
         self.sync_tray(&settings);
     }
 
-    pub fn toggle_visible(&self) {
-        self.set_visible(!self.settings().visible);
+    /// A short peek, for a launch the user started themselves.
+    pub fn peek(&self) {
+        lock(&self.presence).peek(Instant::now());
+    }
+
+    /// From the worker, on every player poll.
+    pub fn observe_player(&self, seen: PlayerSeen) {
+        let changed = lock(&self.presence).observe(seen, Instant::now());
+        match changed {
+            Some(true) => log::info!("Spotify is playing; showing the lyrics"),
+            Some(false) => log::info!("Spotify has gone; hiding the lyrics"),
+            None => {}
+        }
+    }
+
+    /// Shows or hides the window to match settings and [`Presence`]. Runs on
+    /// the housekeeping thread only, so show/hide calls never race.
+    pub fn presence_tick(&self) {
+        let Some(window) = self.window() else { return };
+        let now = Instant::now();
+        if lock(&self.presence).peeking(now) && self.window_shown.load(Ordering::SeqCst) {
+            let over = self.pointer_over(&window).is_some_and(|(inside, _)| inside);
+            if over {
+                lock(&self.presence).hovered(now);
+            }
+        }
+        let visible = lock(&self.settings).visible;
+        let shown = lock(&self.presence).shown(visible, now);
+        if self.window_shown.load(Ordering::SeqCst) != shown {
+            let result = if shown { window.show() } else { window.hide() };
+            match result {
+                Ok(()) => self.window_shown.store(shown, Ordering::SeqCst),
+                Err(e) => log::warn!(
+                    "could not {} the window: {e}",
+                    if shown { "show" } else { "hide" }
+                ),
+            }
+        }
     }
 
     pub fn step_font(&self, steps: i32) {
@@ -259,7 +309,7 @@ impl Controller {
         let settings = self.settings();
         let Some(window) = self.window() else { return };
 
-        if !settings.locked || !settings.visible {
+        if !settings.locked || !self.window_shown.load(Ordering::SeqCst) {
             // Also repairs a race with set_locked(false) on another thread.
             if self.ignoring_cursor.load(Ordering::SeqCst) != settings.locked {
                 self.set_ignore_cursor(&window, settings.locked);
@@ -268,13 +318,25 @@ impl Controller {
             return;
         }
 
+        let Some((inside, over_button)) = self.pointer_over(&window) else {
+            return;
+        };
+        let ignore = !over_button;
+        if self.ignoring_cursor.load(Ordering::SeqCst) != ignore {
+            self.set_ignore_cursor(&window, ignore);
+        }
+        self.report_pointer(inside);
+    }
+
+    /// Whether the cursor is over the window, and over the unlock button.
+    fn pointer_over(&self, window: &WebviewWindow) -> Option<(bool, bool)> {
         let (Ok(cursor), Ok(pos), Ok(size), Ok(scale)) = (
             self.app.cursor_position(),
             window.inner_position(),
             window.inner_size(),
             window.scale_factor(),
         ) else {
-            return;
+            return None;
         };
         let rect = Rect {
             x: f64::from(pos.x),
@@ -283,13 +345,12 @@ impl Controller {
             height: f64::from(size.height),
         };
         let hotspot = *lock(&self.hotspot);
-        let (inside, over_button) = geometry::hit_test((cursor.x, cursor.y), rect, scale, hotspot);
-
-        let ignore = !over_button;
-        if self.ignoring_cursor.load(Ordering::SeqCst) != ignore {
-            self.set_ignore_cursor(&window, ignore);
-        }
-        self.report_pointer(inside);
+        Some(geometry::hit_test(
+            (cursor.x, cursor.y),
+            rect,
+            scale,
+            hotspot,
+        ))
     }
 
     fn report_pointer(&self, inside: bool) {
@@ -298,7 +359,8 @@ impl Controller {
         }
     }
 
-    /// Size, position, click-through and visibility from saved settings.
+    /// Size, position and click-through from saved settings. The window is
+    /// shown later, by [`Controller::presence_tick`].
     pub fn restore_window(&self, window: &WebviewWindow) -> tauri::Result<()> {
         let settings = self.settings();
         let (w, h) = geometry::logical_size(settings.font_scale);
@@ -341,9 +403,6 @@ impl Controller {
         }
 
         self.set_ignore_cursor(window, settings.locked);
-        if settings.visible {
-            window.show()?;
-        }
         Ok(())
     }
 }

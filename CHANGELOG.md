@@ -12,6 +12,7 @@ First release: floating desktop lyrics for the Spotify desktop app on Windows.
 
 **Overlay**
 - Transparent, always on top, no taskbar button. Drag to move; hover for playback controls, text size, colour, and lyric timing.
+- Appears when Spotify starts playing, stays up through pauses, and hides when Spotify quits.
 - Lock (`Ctrl+Alt+L`) so clicks pass through; hover the lyrics to unlock. Show or hide with `Ctrl+Alt+D`.
 - Tray menu: show/hide, lock, look up lyrics again, start with Windows, open log folder, quit.
 - Remembers position, size, colour, timing and lock state.

@@ -14,7 +14,7 @@ Requires Windows 10 or 11 and the [Spotify desktop app](https://www.spotify.com/
 
 1. Download **`LyricsOverlay-<version>-setup.exe`** from the [latest release](https://github.com/AllenJWZhu/Spotify_Lyrics_Desktop/releases/latest).
 2. Run it. The installer isn't code-signed yet, so Windows SmartScreen shows **"Windows protected your PC"**: click **More info → Run anyway**. It installs for your user only and needs no administrator rights.
-3. Play something in Spotify. The lyrics appear above the taskbar.
+3. It shows itself above the taskbar for a few seconds, then waits out of sight. Play something in Spotify and the lyrics appear.
 
 Prefer not to install? **`LyricsOverlay-<version>-portable.zip`** contains a single `LyricsOverlay.exe`; unzip and run it. It needs the Microsoft Edge WebView2 runtime, which Windows 11 and up-to-date Windows 10 already have (the installer adds it if missing).
 
@@ -43,7 +43,7 @@ To uninstall, use **Settings → Apps → Installed apps → Lyrics Overlay**. I
 
 ## Using it
 
-The window appears above the taskbar. Drag it anywhere to move it.
+The lyrics appear when Spotify starts playing, stay up while it's paused, and go away when you quit Spotify. Drag them anywhere to move them.
 
 | | |
 | --- | --- |
@@ -51,9 +51,9 @@ The window appears above the taskbar. Drag it anywhere to move it.
 | **Lock** | clicks pass through to whatever is underneath. Hover the lyrics and an unlock button appears at the top |
 | **Tray icon** | show/hide, lock/unlock, look up lyrics again, start with Windows, open log folder, quit |
 | `Ctrl+Alt+L` | lock / unlock |
-| `Ctrl+Alt+D` | show / hide |
+| `Ctrl+Alt+D` | show / hide. While Spotify isn't playing, shows the window for a few seconds so you can move it |
 
-**Start with Windows** in the tray menu is off by default. Turn it on and the overlay starts when you sign in to Windows and waits for Spotify.
+**Start with Windows** in the tray menu is off by default. Turn it on and the overlay starts when you sign in, out of sight until Spotify plays.
 
 Where things are kept:
 

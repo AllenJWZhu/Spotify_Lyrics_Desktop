@@ -10,6 +10,7 @@ mod controller;
 mod demo;
 mod geometry;
 mod logging;
+mod presence;
 mod settings;
 mod shortcuts;
 mod tray;
@@ -95,8 +96,8 @@ pub fn quit(app: &AppHandle) {
     app.exit(0);
 }
 
-/// Cursor tracking for the locked window, and periodic saving of the
-/// window position.
+/// Showing and hiding the window, cursor tracking for the locked window, and
+/// periodic saving of the window position.
 fn spawn_housekeeping(app: AppHandle) -> std::io::Result<()> {
     thread::Builder::new()
         .name("housekeeping".into())
@@ -104,6 +105,7 @@ fn spawn_housekeeping(app: AppHandle) -> std::io::Result<()> {
             let mut last_flush = Instant::now();
             loop {
                 let controller = app.state::<Controller>();
+                controller.presence_tick();
                 controller.pointer_tick();
                 if last_flush.elapsed() >= Duration::from_millis(500) {
                     controller.flush();
@@ -115,13 +117,18 @@ fn spawn_housekeeping(app: AppHandle) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Passed by the start-at-login entry.
+const AT_LOGIN_ARG: &str = "--autostart";
+
 fn main() {
     let demo = cfg!(not(windows)) || std::env::args().any(|a| a == "--demo");
+    // Started by "Start with Windows" rather than by the user.
+    let at_login = std::env::args().any(|a| a == AT_LOGIN_ARG);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
+            Some(vec![AT_LOGIN_ARG]),
         ))
         .manage(worker::Shared::default())
         .invoke_handler(tauri::generate_handler![
@@ -140,9 +147,10 @@ fn main() {
                 logging::init(&dir);
             }
             log::info!(
-                "Lyrics Overlay {} starting{}",
+                "Lyrics Overlay {} starting{}{}",
                 env!("CARGO_PKG_VERSION"),
-                if demo { " in demo mode" } else { "" }
+                if demo { " in demo mode" } else { "" },
+                if at_login { " at login" } else { "" }
             );
             let path = app.path().app_config_dir()?.join("settings.json");
             let settings = Settings::load(&path);
@@ -163,6 +171,11 @@ fn main() {
                 }
             });
             controller.restore_window(&window)?;
+            // A launch at login stays out of sight until Spotify plays; one
+            // the user started shows itself briefly so they see it worked.
+            if !at_login {
+                controller.peek();
+            }
 
             match tray::build(app, &settings) {
                 Ok(items) => controller.attach_tray(items),
