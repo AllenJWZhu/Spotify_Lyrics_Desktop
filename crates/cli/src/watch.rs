@@ -155,7 +155,7 @@ pub fn run(
                 thread::spawn(move || {
                     // The terminal can show the technical detail too.
                     let result = provider.fetch(&track).map_err(|e| FetchError {
-                        message: format!("{} ({e})", e.kind().message()),
+                        message: format!("{} ({e})", e.message()),
                         retryable: e.kind().is_retryable(),
                     });
                     // The receiver only goes away when we exit.

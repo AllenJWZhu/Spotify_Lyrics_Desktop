@@ -67,7 +67,7 @@ jobs:
   lrclib-live:
     # Calls the real LRCLIB API on Windows (OS certificate store, system
     # proxy). Informational: an outage there must not block merges.
-    name: LRCLIB live (informational)
+    name: Live lyrics lookups (informational)
     runs-on: windows-latest
     continue-on-error: true
     steps:
@@ -76,3 +76,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Live lookups
         run: cargo test -p lyrics-core --test lrclib_live --locked -- --ignored --nocapture --test-threads=1
+      - name: NetEase live lookups
+        if: always()
+        run: cargo test -p lyrics-core --test netease_live --locked -- --ignored --nocapture --test-threads=1
