@@ -58,7 +58,12 @@
           "English",
           "SimpChinese"
         ],
-        "displayLanguageSelector": false
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "sidebarImage": "installer/sidebar.bmp",
+        "headerImage": "installer/header.bmp",
+        "installerHooks": "installer/hooks.nsh"
       }
     },
     "createUpdaterArtifacts": false

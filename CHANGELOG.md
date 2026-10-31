@@ -1,6 +1,12 @@
 # Changelog
 
-## [0.1.1] - Unreleased
+## [0.1.2] - Unreleased
+
+**Installer**
+- The installer and uninstaller carry the app's icon instead of the generic NSIS one.
+- New artwork on the installer's pages, in the app's colours.
+
+## [0.1.1] - 2026-10-31
 
 **Updates**
 - The overlay checks for a new version shortly after it starts and every few hours, and offers to install it: one click downloads it, installs it and restarts the overlay. **Check for updates** in the tray checks right away.

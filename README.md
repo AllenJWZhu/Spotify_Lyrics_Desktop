@@ -110,7 +110,8 @@ crates/core
   lyrics/    LRC parser, title/artist cleanup, LRCLIB client, SQLite cache
   follow.rs  Follower: current track, lyrics lookup with retries, current line
 crates/cli   command-line front end
-crates/app   overlay window (Tauri): settings, controller (lock, tray, shortcuts), worker; ui/ is plain HTML/CSS/JS, no build step
+crates/app   overlay window (Tauri): settings, controller (lock, tray, shortcuts), worker; ui/ is plain HTML/CSS/JS, no build step;
+             installer/ has the installer artwork (make_art.py redraws it) and an NSIS hook
 ```
 
 ## Development
