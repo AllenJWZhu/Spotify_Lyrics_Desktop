@@ -57,11 +57,12 @@ impl Racing {
         self
     }
 
-    /// LRCLIB, and NetEase while `netease` is on.
-    pub fn lrclib_and_netease(netease: Arc<AtomicBool>) -> Self {
+    /// LRCLIB, plus QQ Music and NetEase while `backups` is on.
+    pub fn standard(backups: Arc<AtomicBool>) -> Self {
         Self::new()
             .with(super::lrclib::Lrclib::new())
-            .with_switch(super::netease::NetEase::new(), netease)
+            .with_switch(super::qqmusic::QqMusic::new(), Arc::clone(&backups))
+            .with_switch(super::netease::NetEase::new(), backups)
     }
 }
 

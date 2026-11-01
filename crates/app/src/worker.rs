@@ -61,7 +61,7 @@ impl Shared {
 }
 
 /// `cache`: where to keep fetched lyrics; `None` (or a cache that fails to
-/// open) means always fetch. `backup`: whether to ask NetEase when LRCLIB
+/// open) means always fetch. `backup`: whether to ask the backup sources when LRCLIB
 /// has nothing synced. Neither is used in demo mode.
 pub fn spawn(
     app: AppHandle,
@@ -226,7 +226,7 @@ fn demo_parts() -> Parts {
     }
 }
 
-/// LRCLIB backed up by NetEase, behind the on-disk cache when it opens.
+/// LRCLIB and the backup sources, behind the on-disk cache when it opens.
 #[cfg_attr(not(windows), allow(dead_code))]
 fn lyrics_provider(
     cache_path: Option<&std::path::Path>,
@@ -235,7 +235,7 @@ fn lyrics_provider(
     use lyrics_core::lyrics::cache::CachedProvider;
     use lyrics_core::lyrics::fallback::Racing;
 
-    let sources = Racing::lrclib_and_netease(backup);
+    let sources = Racing::standard(backup);
     match cache_path.map(LyricsCache::open) {
         Some(Ok(cache)) => {
             let cache = Arc::new(cache);

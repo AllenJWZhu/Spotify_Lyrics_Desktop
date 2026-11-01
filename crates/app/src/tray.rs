@@ -44,7 +44,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
     let backup = CheckMenuItem::with_id(
         app,
         "backup",
-        "Backup lyrics from NetEase",
+        "Backup lyrics sources",
         true,
         settings.backup_lyrics,
         None::<&str>,
