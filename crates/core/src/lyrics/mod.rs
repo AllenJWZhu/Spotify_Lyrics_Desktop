@@ -4,7 +4,9 @@ pub mod cache;
 pub mod fallback;
 mod lrc;
 pub mod lrclib;
+pub mod matching;
 pub mod netease;
+pub mod qqmusic;
 pub mod query;
 
 pub use lrc::{LyricLine, SyncedLyrics};
@@ -78,6 +80,7 @@ pub enum LyricsError {
 pub enum Service {
     Lrclib,
     NetEase,
+    QqMusic,
 }
 
 impl Service {
@@ -85,6 +88,7 @@ impl Service {
         match self {
             Service::Lrclib => "LRCLIB",
             Service::NetEase => "NetEase",
+            Service::QqMusic => "QQ Music",
         }
     }
 
@@ -92,6 +96,7 @@ impl Service {
         match self {
             Service::Lrclib => "lrclib.net",
             Service::NetEase => "music.163.com",
+            Service::QqMusic => "y.qq.com",
         }
     }
 }

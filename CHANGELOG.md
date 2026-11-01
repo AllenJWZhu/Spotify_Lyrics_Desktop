@@ -1,6 +1,12 @@
 # Changelog
 
-## [0.1.4] - Unreleased
+## [0.1.5] - Unreleased
+
+**Lyrics**
+- Another backup lyrics source, with much better K-pop coverage: the original recordings of most K-pop songs, synced. It's asked at the same time as the others.
+- The tray switch is now **Backup lyrics sources** and covers all the backups.
+
+## [0.1.4] - 2026-10-31
 
 **Lyrics**
 - Lyrics sources are now asked at the same time, and the first one with synced lyrics wins. A source that is down no longer holds up the others, so lyrics show as soon as anyone has them.

@@ -43,9 +43,9 @@ pub struct WatchArgs {
     #[arg(long, default_value_t = 1_000)]
     pub settle_ms: i64,
 
-    /// Don't fall back to NetEase when LRCLIB has nothing synced.
+    /// Ask LRCLIB only, not the backup sources (QQ Music, NetEase).
     #[arg(long)]
-    pub no_netease: bool,
+    pub no_backups: bool,
 }
 
 #[derive(Args, Debug)]
@@ -76,8 +76,8 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Some(Command::Drift(args)) => drift::run(&source, &args),
         None => {
-            let backup = Arc::new(AtomicBool::new(!cli.watch.no_netease));
-            let provider = Arc::new(Racing::lrclib_and_netease(backup));
+            let backup = Arc::new(AtomicBool::new(!cli.watch.no_backups));
+            let provider = Arc::new(Racing::standard(backup));
             watch::run(&source, provider, &cli.watch)
         }
     }

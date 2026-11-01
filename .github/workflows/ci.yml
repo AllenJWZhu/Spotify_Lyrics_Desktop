@@ -79,6 +79,6 @@ jobs:
       - name: NetEase live lookups
         if: always()
         run: cargo test -p lyrics-core --test netease_live --locked -- --ignored --nocapture --test-threads=1
-      - name: QQ Music probe
+      - name: QQ Music live lookups
         if: always()
-        run: cargo test -p lyrics-core --test qqmusic_probe --locked -- --ignored --nocapture --test-threads=1
+        run: cargo test -p lyrics-core --test qqmusic_live --locked -- --ignored --nocapture --test-threads=1

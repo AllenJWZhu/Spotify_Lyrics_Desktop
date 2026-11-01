@@ -63,7 +63,7 @@ pub struct Settings {
     pub offset_ms: i64,
     /// Last position; `None` means bottom center.
     pub position: Option<WindowPosition>,
-    /// Ask NetEase when LRCLIB has nothing synced or can't be reached.
+    /// Also ask the backup sources (QQ Music, NetEase) alongside LRCLIB.
     pub backup_lyrics: bool,
 }
 
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(s.font_scale, MAX_FONT_SCALE);
         assert_eq!(s.offset_ms, MAX_OFFSET_MS);
         assert!(s.visible);
-        // Files from before the NetEase backup existed get it turned on.
+        // Files from before the backup sources existed get them turned on.
         assert!(s.backup_lyrics);
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }

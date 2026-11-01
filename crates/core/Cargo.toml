@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+base64 = "0.22"
 log = "0.4"
 rusqlite = { version = "0.41", features = ["bundled"] }
 serde.workspace = true

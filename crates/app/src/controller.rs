@@ -93,7 +93,7 @@ impl Controller {
         *lock(&self.worker) = Some(tx);
     }
 
-    /// The switch the lyrics lookup reads to decide whether to ask NetEase.
+    /// The switch the lyrics lookup reads to decide whether to ask the backups.
     pub fn backup_lyrics_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.backup_lyrics)
     }
@@ -141,13 +141,13 @@ impl Controller {
         }
     }
 
-    /// Turns the NetEase backup on or off. Turning it on looks the current
+    /// Turns the backup sources on or off. Turning it on looks the current
     /// song up again, since that's usually why someone reaches for it.
     pub fn toggle_backup_lyrics(&self) {
         let settings = self.update(|s| s.backup_lyrics = !s.backup_lyrics);
         self.backup_lyrics
             .store(settings.backup_lyrics, Ordering::Relaxed);
-        log::info!("NetEase backup: {}", settings.backup_lyrics);
+        log::info!("backup lyrics sources: {}", settings.backup_lyrics);
         self.sync_tray(&settings);
         if settings.backup_lyrics {
             self.refresh_lyrics();
