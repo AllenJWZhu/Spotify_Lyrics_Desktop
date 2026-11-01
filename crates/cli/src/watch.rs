@@ -281,9 +281,7 @@ mod tests {
         );
         assert_eq!(
             h.take(),
-            vec![
-                "  lyrics lookup failed: LRCLIB is down right now; retrying in 5s"
-            ]
+            vec!["  lyrics lookup failed: LRCLIB is down right now; retrying in 5s"]
         );
         h.tick(&playing(0, 0), 6_000);
         h.fetched(Ok(found(Lyrics::Plain("a\nb".into()))), 6_000);
