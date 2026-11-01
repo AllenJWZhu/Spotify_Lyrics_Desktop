@@ -1,6 +1,11 @@
 # Changelog
 
-## [0.1.5] - Unreleased
+## [0.1.6] - Unreleased
+
+**Overlay**
+- The sung part of a line no longer has a coloured glow spilling outside the letters; the colour stays inside the outline.
+
+## [0.1.5] - 2026-10-31
 
 **Lyrics**
 - Another backup lyrics source, with much better K-pop coverage: the original recordings of most K-pop songs, synced. It's asked at the same time as the others.
