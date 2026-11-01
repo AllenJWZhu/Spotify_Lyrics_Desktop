@@ -72,9 +72,15 @@ impl Default for Racing {
     }
 }
 
-/// Synced lyrics or a definite "instrumental" end the race.
-fn is_final(found: &FoundLyrics) -> bool {
-    !matches!(found.lyrics, Lyrics::Plain(_))
+/// Synced lyrics end the race, and so does "instrumental" from the most
+/// preferred source. From a backup, "instrumental" waits for the others: a
+/// backup that wrongly flags a song shouldn't hide lyrics LRCLIB has.
+fn is_final(found: &FoundLyrics, rank: usize) -> bool {
+    match found.lyrics {
+        Lyrics::Synced(_) => true,
+        Lyrics::Instrumental => rank == 0,
+        Lyrics::Plain(_) => false,
+    }
 }
 
 impl LyricsProvider for Racing {
@@ -102,12 +108,13 @@ impl LyricsProvider for Racing {
         }
         drop(tx);
 
-        // Best non-final answers so far, by source preference.
+        // Best non-final answer so far (plain text, or a backup's
+        // "instrumental"), by source preference.
         let mut plain: Option<(usize, FoundLyrics)> = None;
         let mut error: Option<(usize, LyricsError)> = None;
         for (rank, result) in rx.iter().take(asked) {
             match result {
-                Ok(Some(found)) if is_final(&found) => {
+                Ok(Some(found)) if is_final(&found, rank) => {
                     log::info!(
                         "{} answered first, after {} ms",
                         found.source,
@@ -122,7 +129,7 @@ impl LyricsProvider for Racing {
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    log::warn!("lyrics lookup for {:?}: {e}", track.title);
+                    log::warn!("{} couldn't look up {:?}: {e}", e.service(), track.title);
                     if error.as_ref().is_none_or(|(r, _)| rank < *r) {
                         error = Some((rank, e));
                     }
@@ -147,6 +154,7 @@ mod tests {
     enum Answer {
         Synced,
         Plain,
+        Instrumental,
         Nothing,
         Fails,
     }
@@ -163,6 +171,7 @@ mod tests {
             let lyrics = match self.answer {
                 Answer::Synced => Lyrics::Synced(SyncedLyrics::parse("[00:01.00]x")),
                 Answer::Plain => Lyrics::Plain("x".into()),
+                Answer::Instrumental => Lyrics::Instrumental,
                 Answer::Nothing => return Ok(None),
                 Answer::Fails => return Err(LyricsError::Other(format!("{} down", self.name))),
             };
@@ -268,5 +277,27 @@ mod tests {
             race((Fails, 10), (Synced, 10), false).0,
             Err("main down".into())
         );
+    }
+
+    #[test]
+    fn a_backups_instrumental_waits_for_the_main_source() {
+        // The main source's lyrics beat a backup that says "instrumental".
+        assert_eq!(
+            race((Synced, 150), (Instrumental, 10), true).0,
+            Ok(Some("main".into()))
+        );
+        assert_eq!(
+            race((Plain, 80), (Instrumental, 10), true).0,
+            Ok(Some("main".into()))
+        );
+        // Nobody else has anything: the backup's "instrumental" stands.
+        assert_eq!(
+            race((Nothing, 50), (Instrumental, 10), true).0,
+            Ok(Some("backup".into()))
+        );
+        // From the main source it ends the race at once.
+        let (result, ms) = race((Instrumental, 10), (Synced, 600), true);
+        assert_eq!(result, Ok(Some("main".into())));
+        assert!(ms < 400, "waited {ms} ms");
     }
 }

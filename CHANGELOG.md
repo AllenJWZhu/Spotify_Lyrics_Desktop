@@ -1,6 +1,14 @@
 # Changelog
 
-## [0.1.6] - Unreleased
+## [0.1.7] - Unreleased
+
+**Lyrics**
+- Songs that only had plain (untimed) lyrics are looked up again after a few days, so synced lyrics that turn up later replace them.
+- A backup source saying a song is instrumental no longer hides lyrics the main source has.
+- One of the backup sources answers faster: its two search methods now run at the same time.
+- The log says which entry matched (title, artist and length), to make a wrong version easy to spot.
+
+## [0.1.6] - 2026-10-31
 
 **Overlay**
 - The sung part of a line no longer has a coloured glow spilling outside the letters; the colour stays inside the outline.

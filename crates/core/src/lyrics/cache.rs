@@ -5,6 +5,9 @@
 //!   [`LyricsCache::remove`] ("look up lyrics again").
 //! - "Nothing found" is kept for [`MISSING_TTL_SECS`], since LRCLIB keeps
 //!   growing and a later lookup may succeed.
+//! - Plain text (no timing) is shown at once but looked up again after
+//!   [`PLAIN_RECHECK_SECS`], in case a source has synced lyrics by then;
+//!   it's kept if they still don't.
 //! - Lookup errors are never cached.
 //!
 //! The cache is disposable: an unreadable or outdated file is recreated,
@@ -24,6 +27,9 @@ const SCHEMA_VERSION: i32 = 1;
 
 /// How long a "no lyrics found" answer is trusted.
 pub const MISSING_TTL_SECS: i64 = 3 * 24 * 60 * 60;
+
+/// How old plain-text lyrics get before a lookup tries for synced ones.
+pub const PLAIN_RECHECK_SECS: i64 = 3 * 24 * 60 * 60;
 
 #[derive(Debug, thiserror::Error)]
 #[error("lyrics cache: {0}")]
@@ -136,6 +142,24 @@ impl LyricsCache {
         })))
     }
 
+    /// When `track`'s entry was stored (unix seconds), if there is one.
+    pub fn fetched_at(&self, track: &TrackInfo) -> Result<Option<i64>, CacheError> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT fetched_at FROM lyrics
+                 WHERE title = ?1 AND artist = ?2 AND album = ?3 AND duration_ms = ?4",
+                params![
+                    track.title,
+                    track.artist,
+                    track.album,
+                    track.duration_ms as i64
+                ],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
     pub fn put(
         &self,
         track: &TrackInfo,
@@ -204,13 +228,37 @@ impl<P> CachedProvider<P> {
 
 impl<P: LyricsProvider> LyricsProvider for CachedProvider<P> {
     fn fetch(&self, track: &TrackInfo) -> Result<Option<FoundLyrics>, LyricsError> {
-        match self.cache.get(track, now_unix_s()) {
+        self.fetch_at(track, now_unix_s())
+    }
+}
+
+impl<P: LyricsProvider> CachedProvider<P> {
+    fn fetch_at(&self, track: &TrackInfo, now: i64) -> Result<Option<FoundLyrics>, LyricsError> {
+        let stale_plain = match self.cache.get(track, now) {
+            Ok(Some(Some(found))) if matches!(found.lyrics, Lyrics::Plain(_)) => {
+                let age = self.cache.fetched_at(track).ok().flatten().map(|t| now - t);
+                if age.is_some_and(|a| a < PLAIN_RECHECK_SECS) {
+                    return Ok(Some(found));
+                }
+                Some(found)
+            }
             Ok(Some(answer)) => return Ok(answer),
-            Ok(None) => {}
-            Err(e) => log::warn!("{e}; asking the provider"),
-        }
-        let answer = self.inner.fetch(track)?;
-        if let Err(e) = self.cache.put(track, &answer, now_unix_s()) {
+            Ok(None) => None,
+            Err(e) => {
+                log::warn!("{e}; asking the provider");
+                None
+            }
+        };
+        let answer = match (self.inner.fetch(track), stale_plain) {
+            // Something better than the plain text we had.
+            (Ok(Some(found)), Some(_)) if !matches!(found.lyrics, Lyrics::Plain(_)) => Some(found),
+            // Still nothing synced, or the lookup failed: keep the plain
+            // text, and wait another period before trying again.
+            (_, Some(plain)) => Some(plain),
+            (Ok(answer), None) => answer,
+            (Err(e), None) => return Err(e),
+        };
+        if let Err(e) = self.cache.put(track, &answer, now) {
             log::warn!("{e}; not cached");
         }
         Ok(answer)
@@ -384,5 +432,45 @@ mod tests {
         assert!(provider.fetch(&track("Song")).is_err());
         assert_eq!(provider.inner.calls.load(Ordering::SeqCst), 2);
         assert_eq!(cache.get(&track("Song"), now_unix_s()).unwrap(), None);
+    }
+
+    #[test]
+    fn plain_text_is_rechecked_for_synced_lyrics_after_a_while() {
+        struct Fixed(CachedAnswer, AtomicUsize);
+        impl LyricsProvider for Fixed {
+            fn fetch(&self, _: &TrackInfo) -> Result<Option<FoundLyrics>, LyricsError> {
+                self.1.fetch_add(1, Ordering::SeqCst);
+                Ok(self.0.clone())
+            }
+        }
+        let plain = found(Lyrics::Plain("words".into()));
+
+        // A recheck that finds synced lyrics replaces the plain text.
+        let cache = Arc::new(LyricsCache::in_memory().unwrap());
+        cache.put(&track("Song"), &plain, 0).unwrap();
+        let p = CachedProvider::new(Fixed(synced(), AtomicUsize::new(0)), Arc::clone(&cache));
+        assert_eq!(
+            p.fetch_at(&track("Song"), PLAIN_RECHECK_SECS - 1).unwrap(),
+            plain
+        );
+        assert_eq!(p.inner.1.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            p.fetch_at(&track("Song"), PLAIN_RECHECK_SECS).unwrap(),
+            synced()
+        );
+        assert_eq!(
+            cache.get(&track("Song"), PLAIN_RECHECK_SECS).unwrap(),
+            Some(synced())
+        );
+
+        // A recheck that finds nothing better keeps the plain text and
+        // restarts the wait.
+        let cache = Arc::new(LyricsCache::in_memory().unwrap());
+        cache.put(&track("Song"), &plain, 0).unwrap();
+        let p = CachedProvider::new(Fixed(None, AtomicUsize::new(0)), Arc::clone(&cache));
+        let t = PLAIN_RECHECK_SECS;
+        assert_eq!(p.fetch_at(&track("Song"), t).unwrap(), plain);
+        assert_eq!(p.fetch_at(&track("Song"), t + 1).unwrap(), plain);
+        assert_eq!(p.inner.1.load(Ordering::SeqCst), 1);
     }
 }

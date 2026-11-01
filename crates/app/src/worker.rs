@@ -188,12 +188,17 @@ fn spawn_fetch(
     thread::spawn(move || {
         let result = provider.fetch(&track);
         match &result {
+            // What matched, so a wrong version (live, sped up…) shows up here.
             Ok(Some(found)) => log::info!(
-                "lyrics for {:?} by {:?}: {} from {}",
+                "lyrics for {:?} by {:?} ({}): {} from {}, matched {:?} by {:?} ({})",
                 track.title,
                 track.artist,
+                seconds(Some(track.duration_ms)),
                 kind_name(&found.lyrics),
-                found.source
+                found.source,
+                found.matched_title,
+                found.matched_artist,
+                seconds(found.matched_duration_ms),
             ),
             Ok(None) => log::info!("no lyrics for {:?} by {:?}", track.title, track.artist),
             // The full error (status, proxy, TLS…) goes to the log; the page
@@ -208,6 +213,12 @@ fn spawn_fetch(
         // The receiver lives as long as the worker, i.e. the app.
         let _ = tx.send((track, result));
     });
+}
+
+fn seconds(ms: Option<u64>) -> String {
+    ms.map_or("length unknown".into(), |ms| {
+        format!("{:.1} s", ms as f64 / 1000.0)
+    })
 }
 
 fn kind_name(lyrics: &lyrics_core::lyrics::Lyrics) -> &'static str {
