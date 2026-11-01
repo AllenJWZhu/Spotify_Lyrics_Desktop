@@ -159,6 +159,7 @@ fn report_qq_music_coverage() {
         ("晴天", "周杰伦", 269),
     ];
     let mut synced = 0;
+    let mut lines = Vec::new();
     for (title, artist, secs) in tracks {
         let query = format!("{title} {artist}");
         let found = search_musicu(&agent, &query)
@@ -201,14 +202,13 @@ fn report_qq_music_coverage() {
                 }
             }
         };
-        report(&format!("{title} — {artist}: {line}"));
+        let line = format!("{title} — {artist}: {line}");
+        println!("{line}");
+        lines.push(line);
     }
-    report(&format!("synced: {synced} of {}", tracks.len()));
-}
-
-fn report(line: &str) {
-    println!("{line}");
+    lines.push(format!("synced: {synced} of {}", tracks.len()));
+    // One annotation: GitHub shows at most ten per step.
     if std::env::var_os("GITHUB_ACTIONS").is_some() {
-        println!("::notice title=QQ Music probe::{line}");
+        println!("::notice title=QQ Music probe::{}", lines.join(" ‖ "));
     }
 }
