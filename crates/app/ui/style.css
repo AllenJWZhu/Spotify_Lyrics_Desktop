@@ -41,7 +41,6 @@
 
   /* The one accent: the sung part of the line. Set per theme. */
   --accent: #63c7ff;
-  --accent-glow: color-mix(in srgb, var(--accent) 45%, transparent);
 
   /* Set by the app from settings; the window is resized to match. */
   --font-scale: 1;
@@ -307,13 +306,13 @@ body:not(.locked) #unlock {
   color: var(--haze);
 }
 
-/* The sung part: flat accent with a soft glow, revealed up to --fill
-   (0..1) behind a feathered edge instead of a hard cut. */
+/* The sung part: flat accent, revealed up to --fill (0..1) behind a
+   feathered edge instead of a hard cut. No glow: on the transparent window
+   it showed as a coloured haze around the letters, past their outline. */
 .sung {
   --feather: 0.45em;
   --edge: calc(var(--fill, 0) * (100% + 2 * var(--feather)) - var(--feather));
   color: var(--accent);
-  text-shadow: 0 0 0.45em var(--accent-glow);
   -webkit-mask-image: linear-gradient(
     90deg,
     #000 calc(var(--edge) - var(--feather)),
