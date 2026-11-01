@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.4] - Unreleased
+
+**Lyrics**
+- Lyrics sources are now asked at the same time, and the first one with synced lyrics wins. A source that is down no longer holds up the others, so lyrics show as soon as anyone has them.
+- When a source is down, the message says so plainly, without an HTTP code.
+
 ## [0.1.3] - 2026-10-31
 
 **Lyrics**
