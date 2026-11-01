@@ -172,9 +172,13 @@ impl HttpTransport {
         self
     }
 
+    pub(crate) fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     /// Runs `request` through the proxy (falling back to direct) or
     /// directly, retrying transient failures after each delay in turn.
-    fn send<T>(
+    pub(crate) fn send<T>(
         &self,
         request: impl Fn(&ureq::Agent) -> Result<T, ureq::Error>,
     ) -> Result<T, ureq::Error> {

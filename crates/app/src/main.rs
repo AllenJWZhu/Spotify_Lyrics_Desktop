@@ -194,7 +194,15 @@ fn main() {
                 .app_cache_dir()
                 .ok()
                 .map(|d| d.join("lyrics.sqlite3"));
-            worker::spawn(app.handle().clone(), demo, cache, settings.offset_ms, rx)?;
+            let backup = controller.backup_lyrics_flag();
+            worker::spawn(
+                app.handle().clone(),
+                demo,
+                cache,
+                backup,
+                settings.offset_ms,
+                rx,
+            )?;
             spawn_housekeeping(app.handle().clone())?;
             updates::spawn_background_checks(app.handle().clone());
             Ok(())

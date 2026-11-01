@@ -1,6 +1,12 @@
 # Changelog
 
-## [0.1.2] - Unreleased
+## [0.1.3] - Unreleased
+
+**Lyrics**
+- NetEase Cloud Music (网易云音乐) as a backup source: asked when LRCLIB has no synced lyrics for a song or can't be reached. Strong on Chinese, Japanese and Korean songs, and its Chinese translations are shown under each line. Matches need the same artist, title and length, so covers and other versions are skipped. **Backup lyrics from NetEase** in the tray turns it off (or on, which also looks the current song up again).
+- Error messages name the service that failed.
+
+## [0.1.2] - 2026-10-31
 
 **Installer**
 - A new setup window in the app's own style replaces the Windows wizard: one **Install** button, with a desktop shortcut and Start with Windows under **Options**, then **Open Lyrics Overlay**. In English or Chinese, following Windows.

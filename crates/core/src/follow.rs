@@ -28,10 +28,9 @@ pub struct FetchError {
 
 impl From<&LyricsError> for FetchError {
     fn from(e: &LyricsError) -> Self {
-        let kind = e.kind();
         Self {
-            message: kind.message(),
-            retryable: kind.is_retryable(),
+            message: e.message(),
+            retryable: e.kind().is_retryable(),
         }
     }
 }

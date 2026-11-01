@@ -7,7 +7,7 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::Instant;
 
 use serde::Serialize;
@@ -31,6 +31,7 @@ pub struct TrayItems {
     pub visible: CheckMenuItem<Wry>,
     pub locked: CheckMenuItem<Wry>,
     pub autostart: CheckMenuItem<Wry>,
+    pub backup: CheckMenuItem<Wry>,
 }
 
 #[derive(Clone, Serialize)]
@@ -54,6 +55,8 @@ pub struct Controller {
     pointer_inside: AtomicBool,
     /// Whether Spotify is playing, and any peek; see [`Presence`].
     presence: Mutex<Presence>,
+    /// Mirrors `settings.backup_lyrics` for the lyrics lookup thread.
+    backup_lyrics: Arc<AtomicBool>,
     /// Whether the window is on screen, as last applied by
     /// [`Controller::presence_tick`], the only place that shows or hides it.
     window_shown: AtomicBool,
@@ -67,6 +70,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 impl Controller {
     pub fn new(app: AppHandle, path: PathBuf, settings: Settings) -> Self {
         Self {
+            backup_lyrics: Arc::new(AtomicBool::new(settings.backup_lyrics)),
             app,
             path,
             settings: Mutex::new(settings),
@@ -87,6 +91,11 @@ impl Controller {
 
     pub fn attach_worker(&self, tx: mpsc::Sender<WorkerCommand>) {
         *lock(&self.worker) = Some(tx);
+    }
+
+    /// The switch the lyrics lookup reads to decide whether to ask NetEase.
+    pub fn backup_lyrics_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.backup_lyrics)
     }
 
     pub fn attach_tray(&self, items: TrayItems) {
@@ -128,6 +137,20 @@ impl Controller {
         if let Some(items) = items {
             let _ = items.visible.set_checked(settings.visible);
             let _ = items.locked.set_checked(settings.locked);
+            let _ = items.backup.set_checked(settings.backup_lyrics);
+        }
+    }
+
+    /// Turns the NetEase backup on or off. Turning it on looks the current
+    /// song up again, since that's usually why someone reaches for it.
+    pub fn toggle_backup_lyrics(&self) {
+        let settings = self.update(|s| s.backup_lyrics = !s.backup_lyrics);
+        self.backup_lyrics
+            .store(settings.backup_lyrics, Ordering::Relaxed);
+        log::info!("NetEase backup: {}", settings.backup_lyrics);
+        self.sync_tray(&settings);
+        if settings.backup_lyrics {
+            self.refresh_lyrics();
         }
     }
 

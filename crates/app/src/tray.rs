@@ -41,6 +41,14 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
         None::<&str>,
     )?;
     let refresh = MenuItem::with_id(app, "refresh", "Look up lyrics again", true, None::<&str>)?;
+    let backup = CheckMenuItem::with_id(
+        app,
+        "backup",
+        "Backup lyrics from NetEase",
+        true,
+        settings.backup_lyrics,
+        None::<&str>,
+    )?;
     let logs = MenuItem::with_id(app, "logs", "Open log folder", true, None::<&str>)?;
     let update = MenuItem::with_id(app, "update", updates::CHECK_LABEL, true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -51,6 +59,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
             &locked,
             &PredefinedMenuItem::separator(app)?,
             &refresh,
+            &backup,
             &PredefinedMenuItem::separator(app)?,
             &autostart,
             &update,
@@ -69,6 +78,7 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
                 "visible" => controller.toggle_visible(),
                 "locked" => controller.toggle_locked(),
                 "refresh" => controller.refresh_lyrics(),
+                "backup" => controller.toggle_backup_lyrics(),
                 "logs" => controller.open_log_folder(),
                 "autostart" => controller.toggle_autostart(),
                 "update" => updates::on_tray_click(app),
@@ -86,5 +96,6 @@ pub fn build(app: &App, settings: &Settings) -> tauri::Result<TrayItems> {
         visible,
         locked,
         autostart,
+        backup,
     })
 }

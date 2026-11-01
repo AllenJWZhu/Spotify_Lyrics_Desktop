@@ -1,8 +1,10 @@
 //! Lyrics model, parsing and providers.
 
 pub mod cache;
+pub mod fallback;
 mod lrc;
 pub mod lrclib;
+pub mod netease;
 pub mod query;
 
 pub use lrc::{LyricLine, SyncedLyrics};
@@ -56,11 +58,48 @@ pub struct FoundLyrics {
 
 #[derive(Debug, thiserror::Error)]
 pub enum LyricsError {
+    /// From LRCLIB, the main source.
     #[error("request failed: {0}")]
     Http(#[from] ureq::Error),
 
+    /// From another service, named so messages blame the right one.
+    #[error("{service}: request failed: {error}")]
+    Service {
+        service: Service,
+        error: ureq::Error,
+    },
+
     #[error("{0}")]
     Other(String),
+}
+
+/// A lyrics service, for messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Service {
+    Lrclib,
+    NetEase,
+}
+
+impl Service {
+    pub fn name(self) -> &'static str {
+        match self {
+            Service::Lrclib => "LRCLIB",
+            Service::NetEase => "NetEase",
+        }
+    }
+
+    pub fn host(self) -> &'static str {
+        match self {
+            Service::Lrclib => "lrclib.net",
+            Service::NetEase => "music.163.com",
+        }
+    }
+}
+
+impl std::fmt::Display for Service {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
 }
 
 /// Why a lookup failed, in terms that tell the user whose problem it is.
@@ -89,29 +128,49 @@ impl FailureKind {
         self != FailureKind::Other
     }
 
-    /// One sentence for the overlay.
+    /// One sentence for the overlay, about LRCLIB.
     pub fn message(self) -> String {
+        self.message_for(Service::Lrclib)
+    }
+
+    /// One sentence for the overlay.
+    pub fn message_for(self, service: Service) -> String {
+        let (name, host) = (service.name(), service.host());
         match self {
             FailureKind::ServiceDown(status) => {
-                format!("LRCLIB is having problems right now (HTTP {status})")
+                format!("{name} is having problems right now (HTTP {status})")
             }
-            FailureKind::RateLimited => "LRCLIB is limiting requests right now".into(),
-            FailureKind::TimedOut => "LRCLIB isn't responding".into(),
+            FailureKind::RateLimited => format!("{name} is limiting requests right now"),
+            FailureKind::TimedOut => format!("{name} isn't responding"),
             FailureKind::NoConnection => {
-                "Can't connect to lrclib.net. Check your internet connection".into()
+                format!("Can't connect to {host}. Check your internet connection")
             }
             FailureKind::Proxy => "Can't connect through your system proxy".into(),
-            FailureKind::Secure => "Couldn't make a secure connection to lrclib.net".into(),
-            FailureKind::Other => "Couldn't get lyrics from LRCLIB".into(),
+            FailureKind::Secure => format!("Couldn't make a secure connection to {host}"),
+            FailureKind::Other => format!("Couldn't get lyrics from {name}"),
         }
     }
 }
 
 impl LyricsError {
+    /// The service the failure came from.
+    pub fn service(&self) -> Service {
+        match self {
+            LyricsError::Service { service, .. } => *service,
+            _ => Service::Lrclib,
+        }
+    }
+
+    /// One sentence for the overlay, naming the right service.
+    pub fn message(&self) -> String {
+        self.kind().message_for(self.service())
+    }
+
     pub fn kind(&self) -> FailureKind {
         use std::io::ErrorKind;
-        let LyricsError::Http(e) = self else {
-            return FailureKind::Other;
+        let e = match self {
+            LyricsError::Http(e) | LyricsError::Service { error: e, .. } => e,
+            LyricsError::Other(_) => return FailureKind::Other,
         };
         match e {
             ureq::Error::StatusCode(429) => FailureKind::RateLimited,
