@@ -1,9 +1,9 @@
 # Changelog
 
-## [0.1.3] - Unreleased
+## [0.1.3] - 2026-10-31
 
 **Lyrics**
-- NetEase Cloud Music (网易云音乐) as a backup source: asked when LRCLIB has no synced lyrics for a song or can't be reached. Strong on Chinese, Japanese and Korean songs, and its Chinese translations are shown under each line. Matches need the same artist, title and length, so covers and other versions are skipped. **Backup lyrics from NetEase** in the tray turns it off (or on, which also looks the current song up again).
+- A backup lyrics source: when LRCLIB has no synced lyrics for a song or can't be reached, the overlay now looks elsewhere. It helps most with Chinese, Japanese and Korean songs, and often brings a Chinese translation, shown under each line. A match needs the same artist, title and length, so covers and other versions are skipped. It can be turned off from the tray menu.
 - Error messages name the service that failed.
 
 ## [0.1.2] - 2026-10-31
