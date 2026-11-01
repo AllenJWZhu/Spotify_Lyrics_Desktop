@@ -68,7 +68,7 @@ fn main() -> anyhow::Result<()> {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
-    use lyrics_core::lyrics::fallback::Fallback;
+    use lyrics_core::lyrics::fallback::Racing;
     use lyrics_core::player::smtc::SmtcSource;
 
     let cli = Cli::parse();
@@ -77,7 +77,7 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Drift(args)) => drift::run(&source, &args),
         None => {
             let backup = Arc::new(AtomicBool::new(!cli.watch.no_netease));
-            let provider = Arc::new(Fallback::lrclib_then_netease(backup));
+            let provider = Arc::new(Racing::lrclib_and_netease(backup));
             watch::run(&source, provider, &cli.watch)
         }
     }

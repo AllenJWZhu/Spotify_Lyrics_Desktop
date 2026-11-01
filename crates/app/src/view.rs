@@ -262,7 +262,7 @@ mod tests {
             (Ok(found(Lyrics::Instrumental)), Lookup::Instrumental, false),
             (
                 Err(FetchError {
-                    message: "LRCLIB is having problems right now (HTTP 502)".into(),
+                    message: "LRCLIB is down right now".into(),
                     retryable: true,
                 }),
                 Lookup::Error,

@@ -137,9 +137,8 @@ impl FailureKind {
     pub fn message_for(self, service: Service) -> String {
         let (name, host) = (service.name(), service.host());
         match self {
-            FailureKind::ServiceDown(status) => {
-                format!("{name} is having problems right now (HTTP {status})")
-            }
+            // The status code is in the log; on screen it's just noise.
+            FailureKind::ServiceDown(_) => format!("{name} is down right now"),
             FailureKind::RateLimited => format!("{name} is limiting requests right now"),
             FailureKind::TimedOut => format!("{name} isn't responding"),
             FailureKind::NoConnection => {
@@ -255,7 +254,7 @@ mod tests {
         assert!(!FailureKind::Other.is_retryable());
         assert_eq!(
             FailureKind::ServiceDown(502).message(),
-            "LRCLIB is having problems right now (HTTP 502)"
+            "LRCLIB is down right now"
         );
     }
 

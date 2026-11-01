@@ -274,16 +274,14 @@ mod tests {
         h.take();
         h.fetched(
             Err(FetchError {
-                message: "LRCLIB is having problems right now (HTTP 503)".into(),
+                message: "LRCLIB is down right now".into(),
                 retryable: true,
             }),
             1_000,
         );
         assert_eq!(
             h.take(),
-            vec![
-                "  lyrics lookup failed: LRCLIB is having problems right now (HTTP 503); retrying in 5s"
-            ]
+            vec!["  lyrics lookup failed: LRCLIB is down right now; retrying in 5s"]
         );
         h.tick(&playing(0, 0), 6_000);
         h.fetched(Ok(found(Lyrics::Plain("a\nb".into()))), 6_000);

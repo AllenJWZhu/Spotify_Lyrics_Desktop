@@ -233,9 +233,9 @@ fn lyrics_provider(
     backup: Arc<AtomicBool>,
 ) -> (Arc<dyn LyricsProvider>, Option<Arc<LyricsCache>>) {
     use lyrics_core::lyrics::cache::CachedProvider;
-    use lyrics_core::lyrics::fallback::Fallback;
+    use lyrics_core::lyrics::fallback::Racing;
 
-    let sources = Fallback::lrclib_then_netease(backup);
+    let sources = Racing::lrclib_and_netease(backup);
     match cache_path.map(LyricsCache::open) {
         Some(Ok(cache)) => {
             let cache = Arc::new(cache);

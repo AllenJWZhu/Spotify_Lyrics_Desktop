@@ -56,8 +56,8 @@ test("non-synced lookups show the track and a status", () => {
     [{ lookup: "plain" }, "Only unsynced lyrics exist for this song"],
     [{ lookup: "instrumental" }, "Instrumental"],
     [
-      { lookup: "error", retrying: true, error: "LRCLIB is having problems right now (HTTP 502)" },
-      "LRCLIB is having problems right now (HTTP 502). Trying again automatically",
+      { lookup: "error", retrying: true, error: "LRCLIB is down right now" },
+      "LRCLIB is down right now. Trying again automatically",
     ],
     [
       { lookup: "error", retrying: false, error: null },

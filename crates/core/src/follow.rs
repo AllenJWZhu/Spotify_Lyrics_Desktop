@@ -457,7 +457,7 @@ mod tests {
 
     fn down() -> FetchError {
         FetchError {
-            message: "LRCLIB is having problems right now (HTTP 502)".into(),
+            message: "LRCLIB is down right now".into(),
             retryable: true,
         }
     }
