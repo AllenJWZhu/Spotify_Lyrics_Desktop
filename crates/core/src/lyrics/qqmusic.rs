@@ -256,20 +256,38 @@ fn unescape(s: &str) -> String {
 }
 
 impl Api for HttpTransport {
+    /// Both search endpoints at once; the first non-empty list wins. When
+    /// both come back empty (QQ's way of throttling), the gateway is asked
+    /// once more after a pause.
     fn search(&self, query: &str) -> Result<Vec<Song>, LyricsError> {
-        match self.qq_gateway_search(query) {
-            Ok(songs) if !songs.is_empty() => return Ok(songs),
-            Ok(_) => {
-                std::thread::sleep(EMPTY_RETRY_DELAY);
-                if let Ok(songs) = self.qq_gateway_search(query) {
-                    if !songs.is_empty() {
-                        return Ok(songs);
-                    }
+        let first = std::thread::scope(|scope| {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let gateway = tx.clone();
+            scope.spawn(move || gateway.send(self.qq_gateway_search(query)));
+            scope.spawn(move || tx.send(self.qq_web_search(query)));
+            let mut error = None;
+            for result in rx.iter().take(2) {
+                match result {
+                    Ok(songs) if !songs.is_empty() => return Ok(songs),
+                    Ok(_) => {}
+                    Err(e) => error = Some(e),
                 }
             }
-            Err(e) => log::warn!("QQ Music search failed ({e}); trying the web search"),
+            Err(error)
+        });
+        match first {
+            Ok(songs) => Ok(songs),
+            Err(error) => {
+                std::thread::sleep(EMPTY_RETRY_DELAY);
+                match self.qq_gateway_search(query) {
+                    Ok(songs) if !songs.is_empty() => Ok(songs),
+                    other => match error {
+                        Some(e) => Err(e),
+                        None => other,
+                    },
+                }
+            }
         }
-        self.qq_web_search(query)
     }
 
     fn lyric(&self, mid: &str) -> Result<LyricText, LyricsError> {
