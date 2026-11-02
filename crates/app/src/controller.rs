@@ -19,6 +19,7 @@ use lyrics_core::player::PlayerAction;
 use crate::geometry::{self, CssRect, Rect};
 use crate::presence::{PlayerSeen, Presence};
 use crate::settings::{OFFSET_STEP_MS, Settings, WindowPosition};
+use crate::topmost::Topmost;
 use crate::worker::WorkerCommand;
 
 pub const WINDOW_LABEL: &str = "overlay";
@@ -222,6 +223,17 @@ impl Controller {
                     if shown { "show" } else { "hide" }
                 ),
             }
+        }
+    }
+
+    /// Keeps the window above fullscreen windows; see [`Topmost`]. Runs on
+    /// the housekeeping thread, after [`Controller::presence_tick`].
+    pub fn keep_on_top(&self, topmost: &mut Topmost) {
+        let Some(window) = self.window() else { return };
+        if self.window_shown.load(Ordering::SeqCst) {
+            topmost.tick(&window, Instant::now());
+        } else {
+            topmost.reset();
         }
     }
 

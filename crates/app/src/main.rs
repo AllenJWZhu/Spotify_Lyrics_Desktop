@@ -13,6 +13,7 @@ mod logging;
 mod presence;
 mod settings;
 mod shortcuts;
+mod topmost;
 mod tray;
 mod updates;
 mod view;
@@ -93,6 +94,7 @@ fn quit_app(app: AppHandle) {
 }
 
 pub fn quit(app: &AppHandle) {
+    log::info!("quitting");
     app.state::<Controller>().flush();
     app.exit(0);
 }
@@ -104,9 +106,11 @@ fn spawn_housekeeping(app: AppHandle) -> std::io::Result<()> {
         .name("housekeeping".into())
         .spawn(move || {
             let mut last_flush = Instant::now();
+            let mut topmost = topmost::Topmost::default();
             loop {
                 let controller = app.state::<Controller>();
                 controller.presence_tick();
+                controller.keep_on_top(&mut topmost);
                 controller.pointer_tick();
                 if last_flush.elapsed() >= Duration::from_millis(500) {
                     controller.flush();
@@ -116,6 +120,17 @@ fn spawn_housekeeping(app: AppHandle) -> std::io::Result<()> {
             }
         })?;
     Ok(())
+}
+
+/// A panic on any thread goes to the log too: the release build has no
+/// console, and otherwise a crash leaves no trace.
+fn log_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = thread::current();
+        log::error!("panic on thread {:?}: {info}", thread.name().unwrap_or("?"));
+        default(info);
+    }));
 }
 
 /// Passed by the start-at-login entry.
@@ -150,6 +165,7 @@ fn main() {
             if let Ok(dir) = app.path().app_log_dir() {
                 logging::init(&dir);
             }
+            log_panics();
             log::info!(
                 "Lyrics Overlay {} starting{}{}",
                 env!("CARGO_PKG_VERSION"),
