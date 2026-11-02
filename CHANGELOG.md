@@ -1,6 +1,14 @@
 # Changelog
 
-## [0.1.7] - Unreleased
+## [0.1.8] - Unreleased
+
+**Overlay**
+- The lyrics stay above fullscreen video players and browsers. Before, a window that made itself "always on top" when going fullscreen could cover them until something else was clicked. Games in exclusive fullscreen still cover them; borderless fullscreen works.
+
+**Log**
+- Notes when a fullscreen window comes to the front, when the overlay quits, and any crash, so a disappearing overlay can be traced.
+
+## [0.1.7] - 2026-11-02
 
 **Lyrics**
 - Songs that only had plain (untimed) lyrics are looked up again after a few days, so synced lyrics that turn up later replace them.
